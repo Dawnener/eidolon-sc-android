@@ -139,6 +139,15 @@ class SessionController(
         bootstrap()
     }
 
+    /** 用户在「设置 → 搭话」里拨的开关，对所有角色生效，存在服务器上。 */
+    suspend fun setReachOuts(on: Boolean): Result<Unit> = runCatching {
+        api.setReachOuts(on)
+        val current = _state.value
+        if (current is SessionState.SignedIn) {
+            _state.value = SessionState.SignedIn(current.account.copy(reachOuts = on))
+        }
+    }
+
     suspend fun logout(): Result<Unit> = runCatching {
         runCatching { api.logout() }
         clearCurrentUser()

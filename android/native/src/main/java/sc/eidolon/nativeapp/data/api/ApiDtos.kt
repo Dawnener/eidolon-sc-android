@@ -16,6 +16,7 @@ import sc.eidolon.nativeapp.model.OwnKeysRequest
 import sc.eidolon.nativeapp.model.Photo
 import sc.eidolon.nativeapp.model.PhotoStatus
 import sc.eidolon.nativeapp.model.Recorded
+import sc.eidolon.nativeapp.model.ReachOutModel
 import sc.eidolon.nativeapp.model.Segment
 import sc.eidolon.nativeapp.model.SignInMethod
 import java.time.Instant
@@ -32,6 +33,26 @@ data class HealthDto(
     val ok: Boolean = false,
     @SerialName("deployment_id") val deploymentId: String? = null,
 )
+
+@Serializable
+data class ReachOutModelDto(
+    val configured: Boolean = false,
+    @SerialName("base_url") val baseUrl: String? = null,
+    val model: String? = null,
+    val protocol: String? = null,
+    val last4: String? = null,
+)
+
+fun ReachOutModelDto.toDomain(): ReachOutModel = ReachOutModel(
+    configured = configured,
+    baseUrl = baseUrl,
+    model = model,
+    protocol = protocol,
+    last4 = last4,
+)
+
+@Serializable
+data class ReachOutSwitchRequest(val on: Boolean)
 
 @Serializable
 data class ExemptionDto(val turns: Boolean = false, val calls: Boolean = false)

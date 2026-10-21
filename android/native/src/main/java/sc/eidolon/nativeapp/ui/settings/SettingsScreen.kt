@@ -7,12 +7,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,14 +36,24 @@ fun SettingsScreen(
     container: AppContainer,
     account: Account,
     onOpenOwnKeys: () -> Unit,
+    onOpenReachOutModel: () -> Unit,
     onOpenMemories: () -> Unit,
     onChangeServer: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var confirmLogout by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    // null 表示部署者没开搭话；此时开关不可用。
+    var reachOuts by remember(account.reachOuts) { mutableStateOf(account.reachOuts) }
+    var reachOutsSaving by remember { mutableStateOf(false) }
+    var reachOutsError by remember { mutableStateOf<String?>(null) }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+    ) {
         Text(
             text = "设置",
             style = MaterialTheme.typography.headlineSmall,
@@ -63,6 +76,32 @@ fun SettingsScreen(
             title = "自带密钥",
             subtitle = "用你自己的 API key，费用由你承担",
             onClick = onOpenOwnKeys,
+        )
+        HorizontalDivider()
+        ReachOutsRow(
+            value = reachOuts,
+            saving = reachOutsSaving,
+            error = reachOutsError,
+            onCheckedChange = { on ->
+                val previous = reachOuts
+                reachOuts = on
+                reachOutsSaving = true
+                reachOutsError = null
+                scope.launch {
+                    val result = container.session.setReachOuts(on)
+                    if (result.isFailure) {
+                        reachOuts = previous
+                        reachOutsError = result.exceptionOrNull()?.message ?: "没能保存"
+                    }
+                    reachOutsSaving = false
+                }
+            },
+        )
+        HorizontalDivider()
+        SettingsRow(
+            title = "搭话模型",
+            subtitle = "服务器加密保存，只用于搭话",
+            onClick = onOpenReachOutModel,
         )
         HorizontalDivider()
         SettingsRow(
@@ -125,6 +164,45 @@ fun SettingsScreen(
             dismissButton = {
                 TextButton(onClick = { confirmDelete = false }) { Text("取消") }
             },
+        )
+    }
+}
+
+@Composable
+private fun ReachOutsRow(
+    value: Boolean?,
+    saving: Boolean,
+    error: String?,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("搭话", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = when {
+                    value == null -> "部署者没有开启搭话"
+                    value -> "她会在你一阵子没来后，自己在对话里先说几句"
+                    else -> "已关闭：她不会主动搭话"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (error != null) {
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+        Switch(
+            checked = value == true,
+            onCheckedChange = onCheckedChange,
+            enabled = value != null && !saving,
         )
     }
 }

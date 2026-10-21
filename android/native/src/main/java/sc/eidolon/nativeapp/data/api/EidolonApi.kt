@@ -44,6 +44,7 @@ import sc.eidolon.nativeapp.model.OwnMemoryLlmRequest
 import sc.eidolon.nativeapp.model.OwnSttRequest
 import sc.eidolon.nativeapp.model.OwnTtsRequest
 import sc.eidolon.nativeapp.model.Recorded
+import sc.eidolon.nativeapp.model.ReachOutModel
 import sc.eidolon.nativeapp.model.SttCheckResponse
 import sc.eidolon.nativeapp.model.TurnEvent
 import java.io.IOException
@@ -72,6 +73,27 @@ class EidolonApi(
     }
 
     suspend fun account(): Account = getJson<AccountDto>("/api/account").toDomain()
+
+    suspend fun setReachOuts(on: Boolean) {
+        putNoContent(
+            "/api/account/reach-outs",
+            json.encodeToString(ReachOutSwitchRequest.serializer(), ReachOutSwitchRequest(on)),
+        )
+    }
+
+    suspend fun reachOutModel(): ReachOutModel =
+        getJson<ReachOutModelDto>("/api/account/reach-out-llm").toDomain()
+
+    suspend fun saveReachOutModel(request: OwnMemoryLlmRequest) {
+        putNoContent(
+            "/api/account/reach-out-llm",
+            json.encodeToString(OwnMemoryLlmRequest.serializer(), request),
+        )
+    }
+
+    suspend fun deleteReachOutModel() {
+        deleteNoContent("/api/account/reach-out-llm")
+    }
 
     suspend fun consent() {
         postNoContent(
@@ -263,6 +285,17 @@ class EidolonApi(
 
     private suspend fun postNoContent(path: String, body: String? = null) {
         post(path, body)
+    }
+
+    private suspend fun putNoContent(path: String, body: String) = withContext(Dispatchers.IO) {
+        val response = execute(
+            http.api,
+            Request.Builder().url(url(path)).put(body.toRequestBody(JSON)).build(),
+        )
+        response.use {
+            val text = it.body?.string().orEmpty()
+            if (!it.isSuccessful) throw ApiError.from(it.code, text, it.header("Retry-After"))
+        }
     }
 
     private suspend fun deleteNoContent(path: String) = withContext(Dispatchers.IO) {
