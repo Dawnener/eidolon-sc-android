@@ -34,7 +34,7 @@ cp .env.example .env
 
 在 `.env` 里填写：
 
-- 模型和各项服务的密钥，和本地开发时一样（见 `.env.example` 里的说明）。至少要有对话模型；语音通话需要 Fish Audio（`FISH_AUDIO_API_KEY`），加 Soniox 或阿里云百炼之一做语音识别（`SONIOX_API_KEY`，或 `STT_PROVIDER=bailian` 加 `DASHSCOPE_API_KEY`）；剧情库、检索和记忆需要向量化服务（见下一节）。
+- 模型和各项服务的密钥，和本地开发时一样（见 `.env.example` 里的说明）。对话模型可以不配：三项 `CHAT_LLM_*` 全部留空就是**纯自带密钥模式**，每个文字回合和通话都必须由用户在客户端填写自己的 LLM；配了的话三项要一起填。语音通话需要 Fish Audio（`FISH_AUDIO_API_KEY`），加 Soniox 或阿里云百炼之一做语音识别（`SONIOX_API_KEY`，或 `STT_PROVIDER=bailian` 加 `DASHSCOPE_API_KEY`）；剧情库、检索和记忆需要向量化服务（见下一节）。
 - `EIDOLON_DOMAIN`：网站的域名，例如 `eidolon.example.com`。
 - `EIDOLON_PUBLIC_IP`：这台服务器的公网 IPv4 地址。coturn 只允许把语音中继到这台服务器（也就是后端），别人拿不到它当开放的中继用。
 - `EIDOLON_PRIVATE_IP`：只有公网地址不在网卡上时才填，填网卡上的内网地址。在服务器上执行 `ip -4 addr`：能看到公网地址就不用填（Vultr、DigitalOcean、搬瓦工等大多如此）；只能看到 `10.`、`172.`、`192.168.` 开头的内网地址时（AWS、阿里云、腾讯云等 1:1 NAT 的云主机），填这个内网地址。这种环境还没有实际验证过，语音连不上时请看「排障」。
@@ -65,7 +65,7 @@ docker compose -f docker-compose.prod.yml up -d
 
 前端和后端用 CI 发布到 GHCR 的镜像（`ghcr.io/sallyn0225/eidolon-sc-frontend`、`-backend`），服务器上不用构建。镜像只有 linux/amd64 一种。arm64 的服务器，或者想用自己改过的代码时，改用 `up -d --build` 在服务器上构建。
 
-第一次启动时 Caddy 会申请证书，稍等片刻后用浏览器打开 `https://你的域名`。后端启动失败时（缺少人设文件、对话模型检查不通过等），用 `docker compose -f docker-compose.prod.yml logs backend` 查看原因。
+第一次启动时 Caddy 会申请证书，稍等片刻后用浏览器打开 `https://你的域名`。后端启动失败时（缺少人设文件、对话模型检查不通过、`CHAT_LLM_*` 只填了一部分等），用 `docker compose -f docker-compose.prod.yml logs backend` 查看原因。
 
 - **日志**：每个容器的日志最多留 5 个 10 MB 的文件，旧的自动删掉。后端每行都带时间和来源；访问日志不记查询字符串。事件循环比预期晚醒 200 ms 以上时，后端会记一条 `the event loop ran … ms late, … calls in progress`，可以用来判断机器是否忙不过来。
 - **健康检查**：后端的 `/api/health` 读不了数据库时返回 503，`docker compose ps` 里显示为 unhealthy，但不会自动重启。

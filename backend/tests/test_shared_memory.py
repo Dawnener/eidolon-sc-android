@@ -135,4 +135,5 @@ def test_the_background_model_is_configured_apart_from_the_chat_model(
     assert settings.background_llm == LLMSettings(
         "https://chat.example/v1", "chat-key", "cheap-model"
     )
+    assert settings.chat_llm is not None
     assert settings.chat_llm.model == "chat-model"

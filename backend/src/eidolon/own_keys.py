@@ -142,8 +142,22 @@ class CallsUnavailable(Exception):
     """Voice calls are not configured: there is no key for speech recognition or
     synthesis, neither the user's own nor the deployer's."""
 
+    def __init__(self, message: str = "语音通话尚未配置，请联系管理员") -> None:
+        super().__init__(message)
+
+
+OWN_LLM_REQUIRED = "这个部署只能用自带密钥，请在设置里填写 LLM"
+OWN_SPEECH_REQUIRED = (
+    "这个部署的语音通话只能用自带密钥，请在设置里填写语音合成和语音识别的密钥"
+)
+
+
+class OwnLLMRequired(Exception):
+    """This deployment has no chat model of its own, so the turn or call must bring the
+    user's LLM (ADR-0028)."""
+
     def __init__(self) -> None:
-        super().__init__("语音通话尚未配置，请联系管理员")
+        super().__init__(OWN_LLM_REQUIRED)
 
 
 class LLMService(Protocol):
@@ -385,10 +399,11 @@ def _no_hold() -> Callable[[], None]:
 @dataclass(frozen=True)
 class DeployerKeys:
     """What the deployer pays for wherever a user brought nothing of their own; None for
-    a speech service the deployer has no key for."""
+    a service the deployer has no key for, including the chat and memory models in a
+    BYOK-only deployment (ADR-0028)."""
 
-    chat_llm: ChatLLM
-    memory_llm: ChatLLM
+    chat_llm: ChatLLM | None
+    memory_llm: ChatLLM | None
     stt: SttKey | None = None
     """For whichever speech recognition the deployer chose (`STT_PROVIDER`)."""
     tts: str | None = None
@@ -492,6 +507,9 @@ class OwnKeys:
         if brought.llm is not None:
             return TurnKeys(self._llms(brought, None), exempt, own_llm=True)
         lease = self._deployer.lease()
+        if lease.keys.chat_llm is None or lease.keys.memory_llm is None:
+            lease.release()
+            raise OwnLLMRequired()
         return TurnKeys(self._llms(brought, lease.keys), exempt, lease.release)
 
     def for_call(self, brought: BroughtKeys) -> CallKeys:
@@ -503,6 +521,7 @@ class OwnKeys:
         lease = self._deployer.lease()
         try:
             deployer = lease.keys
+            _require_llm(brought.services, deployer)
             _require_speech(brought.services, deployer)
             stt = brought.stt if brought.stt is not None else deployer.stt
             tts = brought.tts if brought.tts is not None else deployer.tts
@@ -533,6 +552,7 @@ class OwnKeys:
         services = frozenset(services)
         lease = self._deployer.lease()
         try:
+            _require_llm(services, lease.keys)
             _require_speech(services, lease.keys)
         finally:
             lease.release()
@@ -590,6 +610,7 @@ class OwnKeys:
         own_llm = brought.llm
         if own_llm is None:
             assert deployer is not None
+            assert deployer.chat_llm is not None and deployer.memory_llm is not None
             chat = deployer.call_llm if call and deployer.call_llm else deployer.chat_llm
             return TurnLLMs(chat, deployer.memory_llm, deployer.hold_background)
         chat_settings = own_llm.call if call else own_llm.text
@@ -650,11 +671,18 @@ def _rejecting(api_key: str, label: str = "") -> Iterator[None]:
         raise OwnKeyRejected(label + masked_cause(str(e), api_key)) from None
 
 
+def _require_llm(own: frozenset[Service], deployer: DeployerKeys) -> None:
+    """Raise OwnLLMRequired unless a turn or call bringing the user's own keys for `own`
+    has an LLM, theirs or the deployer's."""
+    if "llm" not in own and (deployer.chat_llm is None or deployer.memory_llm is None):
+        raise OwnLLMRequired()
+
+
 def _require_speech(own: frozenset[Service], deployer: DeployerKeys) -> None:
     """Raise CallsUnavailable unless a call bringing the user's own keys for `own` has a
     key for each of speech recognition and synthesis, theirs or the deployer's."""
     if not ("stt" in own or deployer.stt) or not ("tts" in own or deployer.tts):
-        raise CallsUnavailable()
+        raise CallsUnavailable(OWN_SPEECH_REQUIRED if deployer.chat_llm is None else "语音通话尚未配置，请联系管理员")
 
 
 async def _check_public(base_url: str) -> None:

@@ -185,12 +185,19 @@ def _serve() -> int:
     except RuntimeError as e:
         print(e, file=sys.stderr)
         return 1
-    try:  # an unfit chat model
-        asyncio.run(_check_chat_llm(settings))
-    except RuntimeError as e:
-        asyncio.run(backend.aclose())
-        print(e, file=sys.stderr)
-        return 1
+    if settings.chat_model is None:
+        print(
+            "没有配置对话模型（CHAT_LLM_*）：纯自带密钥模式，"
+            "每个文字回合和通话都必须带用户自己的 LLM",
+            file=sys.stderr,
+        )
+    else:
+        try:  # an unfit chat model
+            asyncio.run(_check_chat_llm(settings))
+        except RuntimeError as e:
+            asyncio.run(backend.aclose())
+            print(e, file=sys.stderr)
+            return 1
     app = create_app(backend)
     uvicorn.run(
         app,
@@ -233,14 +240,17 @@ async def _check_judge(settings: Settings) -> None:
 async def _check_chat_llm(settings: Settings) -> None:
     """Checks the chat model on a client of its own, through the proxy or direct, as
     `.env` has it: the server's run in uvicorn's event loop, and an HTTP client cannot
-    move between loops."""
+    move between loops. A BYOK-only deployment has no chat model to check."""
     from eidolon.llm.providers import LLM_TIMEOUT, check_chat_models, open_chat_models
     from eidolon.proxy import open_client
 
+    chat = settings.chat_model
+    if chat is None:
+        return
     proxy = settings.proxy.proxy_for("chat_llm")
-    models = open_chat_models(settings.chat_model, open_client(proxy, LLM_TIMEOUT))
+    models = open_chat_models(chat, open_client(proxy, LLM_TIMEOUT))
     try:
-        await check_chat_models(models, settings.chat_model)
+        await check_chat_models(models, chat)
     finally:
         await models.aclose()
 
@@ -669,6 +679,13 @@ async def _draft_sheet(args: argparse.Namespace) -> int:
     except RuntimeError as e:
         print(e, file=sys.stderr)
         return 1
+    if llm_settings is None:
+        print(
+            "起草人设需要部署者配置后台模型（BACKGROUND_LLM_* 或 CHAT_LLM_*）；"
+            "纯自带密钥部署不能使用这个命令",
+            file=sys.stderr,
+        )
+        return 1
 
     progress = logging.StreamHandler()  # drafting takes minutes; say how far it has got
     progress.setFormatter(logging.Formatter("%(asctime)s %(message)s", "%H:%M:%S"))
@@ -872,6 +889,8 @@ async def _eval_memory(args: argparse.Namespace) -> int:
         return 1
     try:
         background = LLMSettings.background_from_env()
+        if background is None:
+            raise RuntimeError("没有配置后台模型（BACKGROUND_LLM_* 或 CHAT_LLM_*）")
         embedding = EmbeddingSettings.required_from_env()
         rerank = RerankSettings.from_env()
         if rerank is None:

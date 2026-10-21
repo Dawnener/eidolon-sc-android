@@ -5,11 +5,11 @@
 This guide explains how to turn on and tune each feature, and how the characters behave once it is on. Every environment variable is documented one by one in [`.env.example`](../.env.example). The full steps for deploying to a server are in [`deploy.md`](deploy.md) (Chinese), and the terms are in [`GLOSSARY.md`](../GLOSSARY.md).
 
 > [!TIP]
-> The chat model alone (`CHAT_LLM_*`) is enough for text chat. The table below lists what each other feature needs on top:
+> There are two ways to deploy: filling in all three chat model values (`CHAT_LLM_*`) is **deployer mode**, where the deployer pays for the model; leaving all three blank is **bring-your-own-key mode**, where the server stores no default chat model and every text turn and call must carry an LLM the user brought (calls also need their own speech keys). The table below lists what each other feature needs on top:
 >
 > | Feature | Required configuration |
 > |---|---|
-> | Text chat | `CHAT_LLM_*` |
+> | Text chat | `CHAT_LLM_*`, or all three blank plus an LLM brought by the user in the client |
 > | Voice calls | `FISH_AUDIO_API_KEY`, plus a speech recognition key: `SONIOX_API_KEY` (default), or `STT_PROVIDER=bailian` plus `DASHSCOPE_API_KEY` |
 > | Story corpus (sync or import) | An embedding key: `SILICONFLOW_API_KEY` (default), or `EMBEDDING_PROVIDER=gemini` plus `GEMINI_API_KEY` |
 > | Retrieval and memory | An embedding key, `SILICONFLOW_API_KEY` (reranking), plus a judge: `JEV_API_KEY` (default), or `JUDGE_PROVIDER=cloudflare` plus `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, or `JUDGE_PROVIDER=bailian` plus `BAILIAN_JUDGE_API_KEY` and `BAILIAN_JUDGE_WORKSPACE_ID` |
@@ -51,13 +51,15 @@ The "chat model" plays the character; the "background model" extracts memories a
 | `responses` | OpenAI Responses | `{base}/responses` |
 | `anthropic` | Anthropic Messages | `{base}/messages` |
 
-- **The chat model must support streaming and tool calling**. On startup the backend first sends one tiny check request. If the model falls short, or the URL or key is wrong, the backend refuses to start, and says which requirement failed and what the service returned.
+- **Bring-your-own-key mode**: when `CHAT_LLM_BASE_URL`, `CHAT_LLM_API_KEY` and `CHAT_LLM_MODEL` are all blank, the server stores no default chat model; every text turn and call must carry an LLM the user entered under 「自带密钥」 (Own keys) ([ADR-0028](adr/0028-byok-only-without-a-deployer-chat-model.md)). Filling in only some of the three refuses to start; `BACKGROUND_LLM_*` cannot be configured on its own.
+- **The chat model must support streaming and tool calling**. When one is configured, the backend first sends one tiny check request on startup. If the model falls short, or the URL or key is wrong, the backend refuses to start, and says which requirement failed and what the service returned. With all three blank this check is skipped.
 - Reasoning / thinking output the model emits before the reply is discarded and never enters the reply.
 - The Anthropic protocol requires a cap on reply length, 16384 tokens by default, adjustable with `CHAT_LLM_MAX_TOKENS` and `BACKGROUND_LLM_MAX_TOKENS`. The two models set this independently, so long character sheet drafts don't get cut off.
 - **Reasoning effort** (optional): set `CHAT_LLM_REASONING_EFFORT` or `BACKGROUND_LLM_REASONING_EFFORT` to one of `none` (off), `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. Left empty, nothing is sent and the model uses its own default (ADR-0019). The effort is sent as the protocol writes it: `reasoning_effort` for chat-completions, `reasoning.effort` for Responses, and for Anthropic adaptive thinking with `output_config.effort`, or `thinking:{type:"disabled"}` for off. The Anthropic protocol has no `minimal`. If the service doesn't support the chat model's effort, the startup check reports "思考强度『…』被服务拒绝" followed by what the service said; the background model is not checked on startup, only when saved in the admin console. Thinking counts toward the reply length cap, so at `high` and above leave the cap empty or set it generously.
-- **Reasoning effort in calls** (optional): `CHAT_LLM_CALL_REASONING_EFFORT` applies only to the chat model's turns in voice calls, and `CHAT_LLM_REASONING_EFFORT` only to text chats; the levels are the same. Left empty, nothing is sent in calls, whatever the text effort is. To have her answer sooner in calls, set just this one to `none` or `low` and keep the text effort as it was. When the two differ, the startup check tries each, and a refusal says whether it was the text effort (「文字的思考强度」) or the call effort (「通话的思考强度」). Neither affects the background model.
+- **Reasoning effort in calls** (optional): `CHAT_LLM_CALL_REASONING_EFFORT` applies only to the chat model's turns in voice calls, and `CHAT_LLM_REASONING_EFFORT` only to text chats; the levels are the same. Left empty, nothing is sent in calls, whatever the text effort is. To have her answer sooner in calls, set just this one to `none` or `low` and keep the text effort as it was. When the two differ, the startup check tries each, and a refusal says whether it was the text effort (「文字的思考强度」) or the call effort (「通话的思考强度」). Neither affects the background model. Without a chat model, this value cannot be set.
 - **Extra request body** (optional): set `CHAT_LLM_EXTRA_BODY` or `BACKGROUND_LLM_EXTRA_BODY` to a JSON object. It is deep-merged into every request, last, so it can override the parameters the reasoning effort writes. Use it for private switches such as Qwen's `enable_thinking`, GLM's and Kimi's `thinking`, or OpenRouter's `reasoning`, and leave the reasoning effort empty then, so the two don't conflict. It may not contain `model`, `stream`, `stream_options`, `messages`, `input`, `instructions`, `system`, `tools` or `tool_choice`.
 - Any background model setting left empty falls back to the chat model's. For example, setting only `BACKGROUND_LLM_MODEL` switches to a cheaper model on the same service. The reply length cap, the reasoning effort and the extra request body are the exceptions: each model sets these on its own.
+- **In bring-your-own-key mode**: leave all `BACKGROUND_LLM_*` blank. Titles use the user's own background model carried with the turn (or their LLM if they enter none). Memory extraction also needs the deployer's embedding, reranking and judge models, and is off without them.
 
 ## Characters
 
@@ -399,7 +401,7 @@ Switching the format doesn't change the address; when you switch, fix the addres
 
 When a user has been away a while, the character says a few words first in the current conversation, picking up on what they last talked about or recent news of the user she remembers. The closer she is to them, the sooner she comes; she doesn't reach out while cold, distant or in cooldown, nor at night ([ADR-0026](adr/0026-reach-outs-are-not-turns.md)). Users can turn it off on the settings page's 「搭话」 (Reach-outs) tab.
 
-- **Switch**: Off by default. Set `EIDOLON_REACH_OUTS=1` in `.env` to turn it on, or switch it in the 「搭话」 (Reach-outs) card on the admin console's config page, which takes precedence over `.env`.
+- **Switch**: Off by default. Set `EIDOLON_REACH_OUTS=1` in `.env` to turn it on, or switch it in the 「搭话」 (Reach-outs) card on the admin console's config page, which takes precedence over `.env`. In bring-your-own-key mode (`CHAT_LLM_*` all blank) there is no deployer chat model, so reach-outs are forced off and the admin console shows them as unavailable.
 - **Daily limit**: By default each user is reached out to at most 3 times a day (the day going by the time zone in their producer profile, or Beijing time if none is set); change it in the same card.
 - **Cost**: Generated with the deployer's chat model, at the deployer's expense, even for users who bring their own LLM. It doesn't count towards users' usage limits.
 
@@ -447,7 +449,7 @@ docker compose exec backend eidolon user usage <user ID>            # hourly usa
 
 ## Bring your own keys
 
-By default, the deployer pays for everything. Users can enter their own keys on the settings page's 「自带密钥」 (Own keys) tab to share the cost:
+By default, in deployer mode, the deployer pays for everything. Users can enter their own keys on the settings page's 「自带密钥」 (Own keys) tab to share the cost. **In bring-your-own-key mode this is required**: a turn without an LLM is refused with 429 and a prompt to fill one in under settings.
 
 | Service | What to enter | Used for |
 |---|---|---|
@@ -519,7 +521,7 @@ List the admins' sign-in method identifiers in `EIDOLON_ADMINS` in `.env` (like 
 | Users (`/admin/users`) | Search users, see their sign-in methods and recent usage; ban, unban, set an individual usage limit, delete |
 
 - **Overrides `.env`**: Items changed in the admin console are stored in the database and take precedence over `.env`, with no restart needed. Each change is tried before saving and not saved if the try fails. A call in progress finishes on the configuration it connected with.
-- **Only changeable in `.env`**: The admin list, `EIDOLON_SECRET_KEY`, OAuth, the domain, WebRTC/TURN, backups, paths and embedding.
+- **Only changeable in `.env`**: The admin list, `EIDOLON_SECRET_KEY`, OAuth, the domain, WebRTC/TURN, backups, paths and embedding. In bring-your-own-key mode the chat and background models show as unavailable here and cannot be added back from the admin console; to switch to deployer mode, fill in all three `CHAT_LLM_*` values in `.env` and restart.
 - **Not visible**: The admin console shows no one's conversations, memories, producer profile, affinity, gifts, draws, daily tasks or achievements; the dashboard only has totals across all users. The dashboard's numbers come from activity records (which hold no conversation content), kept for 90 days.
 
 For how to turn it on and what to do when you can't get into the admin console, see "后台" in [`deploy.md`](deploy.md) (Chinese).

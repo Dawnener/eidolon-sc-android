@@ -119,17 +119,17 @@ All **28 idols** from the game's eight units, plus the office clerk Nanakusa Haz
 
 ## 🚀 Quick start
 
-You need Docker with Docker Compose, and a chat model that supports streaming and tool calling.
+You need Docker with Docker Compose. A chat model is optional: fill in the three `CHAT_LLM_*` values, or leave all three blank for a bring-your-own-key deployment where each user enters their own LLM in the client.
 
 ```sh
 git clone https://github.com/Sallyn0225/eidolon-sc.git && cd eidolon-sc
-cp .env.example .env    # fill in CHAT_LLM_BASE_URL, CHAT_LLM_API_KEY and CHAT_LLM_MODEL, then add the line EIDOLON_DEV_LOGIN=1
+cp .env.example .env    # fill in all three CHAT_LLM_* values, or leave them blank for BYOK-only, then add the line EIDOLON_DEV_LOGIN=1
 docker compose up --build
 ```
 
 Open <http://localhost:3000> to see the landing page. Click 「登录」 (Sign in) at the top right, choose 「开发登录」 (Dev login) in the sign-in panel, and enter any name. After you agree to the privacy policy and terms of use and confirm you are 13 or older, you land on the conversation list. Pick an idol to start a conversation.
 
-With only the chat model set, you can chat by text. Add other services' keys as you need them to turn on voice calls, story recall, memory and stands step by step:
+With only the chat model set, you can chat by text. If all three `CHAT_LLM_*` values are blank, the deployment is bring-your-own-key: users must enter their own LLM in the client, and turns without one are refused. Add other services' keys as you need them to turn on voice calls, story recall, memory and stands step by step:
 
 | Feature | Required configuration |
 |---|---|

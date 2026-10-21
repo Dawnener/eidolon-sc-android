@@ -446,6 +446,7 @@ async def test_she_reaches_out_on_the_deployers_chat_model_whatever_the_user_bri
     await backend_of(client).reach_outs.run_due()
 
     assert llm.keys == [DEPLOYER_KEY]
+    assert settings.chat_llm is not None
     assert clients.efforts == [settings.chat_llm.reasoning_effort]  # as text turns, not calls
     assert len(reach_outs(await record(client, conversation))) == 1
 

@@ -464,6 +464,7 @@ async def test_the_dashboard_shows_an_llm_at_every_effort_on_one_row_with_its_fi
     make_client: ClientFactory, settings: Settings, github: FakeIdentityProvider
 ):
     clock = FakeClock()
+    assert settings.chat_llm is not None
     high = replace(settings, chat_llm=replace(settings.chat_llm, reasoning_effort="high"))
     thinking = make_client(FakeLLM(REPLY, REPLY), settings=high, clock=clock)
     unset = make_client(

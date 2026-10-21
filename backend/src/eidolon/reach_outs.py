@@ -328,6 +328,9 @@ class ReachOuts:
         """Reach out, unless the user and she have begun talking since her time was looked
         at, as those before took their time."""
         conversation, contact = due.conversation, due.contact
+        # BYOK-only deployments have no deployer chat model, which reach-outs run on.
+        if not self._config.reach_outs.enabled or not self._config.has_service("chat_llm"):
+            return
         if self._talking(conversation.id):
             return
         recording = self._activity.begin(
@@ -335,6 +338,7 @@ class ReachOuts:
             own_llm=False, exempt=False,
         )
         lease = self._config.lease()
+        assert lease.keys.chat_llm is not None
         try:
             with recording.current():
                 said = await self._engine.reach_out(conversation, lease.keys.chat_llm)

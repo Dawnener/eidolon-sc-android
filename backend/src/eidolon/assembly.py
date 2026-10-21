@@ -266,6 +266,10 @@ def build(
         speech=speech, routes=routes, image_client=image_client,
         **({"reach": reach} if reach is not None else {}),
     )
+    if settings.reach_outs and settings.chat_llm is None:
+        log.warning(
+            "EIDOLON_REACH_OUTS is on but there is no deployer chat model; reach-outs are off"
+        )
     closers.append(config.aclose)
     if own_llm_service is None:  # users' own LLMs write down memories too
         own_llm_service = ProviderLLMService(

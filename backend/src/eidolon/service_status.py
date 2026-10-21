@@ -221,9 +221,15 @@ def probes(
             raise RuntimeError("没有语音识别的 key")
         await speech.check_stt(key.provider, key.api_key, own=False)
 
-    found: dict[ServiceName, Probe] = {
-        "chat_llm": chat_llm, "memory_llm": memory_llm, "judge": judge, "tts": tts, "stt": stt,
-    }
+    found: dict[ServiceName, Probe] = {}
+    # A BYOK-only deployment has no chat or memory model of its own to probe.
+    if config.has_service("chat_llm"):
+        found["chat_llm"] = chat_llm
+    if config.has_service("memory_llm"):
+        found["memory_llm"] = memory_llm
+    found["judge"] = judge
+    found["tts"] = tts
+    found["stt"] = stt
     if embedder is not None:
         found["embedding"] = lambda: _embed(embedder)
     if reranker is not None:

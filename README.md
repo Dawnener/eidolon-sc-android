@@ -119,21 +119,21 @@ Eidolon-SC 让你以 **283 事务所制作人**的身份，和原作中的偶像
 
 ## 🚀 快速开始
 
-需要 Docker 与 Docker Compose，以及一个支持流式输出和工具调用的对话模型。
+需要 Docker 与 Docker Compose。对话模型可以填，也可以把 `CHAT_LLM_*` 三项全部留空，走纯自带密钥模式（用户在自己的客户端里填 LLM）。
 
 ```sh
 git clone https://github.com/Sallyn0225/eidolon-sc.git && cd eidolon-sc
-cp .env.example .env    # 填写 CHAT_LLM_BASE_URL、CHAT_LLM_API_KEY、CHAT_LLM_MODEL，再加一行 EIDOLON_DEV_LOGIN=1
+cp .env.example .env    # 填 CHAT_LLM_BASE_URL、CHAT_LLM_API_KEY、CHAT_LLM_MODEL（三项一起填），或全部留空；再加一行 EIDOLON_DEV_LOGIN=1
 docker compose up --build
 ```
 
 打开 <http://localhost:3000> 是落地页。点右上角的「登录」，在登录面板里选「开发登录」，随便填一个名字，同意隐私政策和使用条款、声明年满 13 岁后就进入对话列表，点一位偶像开始对话。
 
-只填对话模型时能文字聊天。按需再补上其他服务的密钥，逐步开启语音通话、剧情回忆、记忆和立绘：
+只填对话模型时能文字聊天。三项 `CHAT_LLM_*` 要么都填，要么都留空：都留空就是纯自带密钥模式，用户必须在客户端「自带密钥」里填自己的 LLM，没填的回合会被明确拒绝。按需再补上其他服务的密钥，逐步开启语音通话、剧情回忆、记忆和立绘：
 
 | 功能 | 需要的配置 |
 |---|---|
-| 文字对话 | `CHAT_LLM_*` |
+| 文字对话 | `CHAT_LLM_*`，或三项全部留空 + 客户端自带 LLM |
 | 语音通话 | `FISH_AUDIO_API_KEY`，加语音识别的 key：`SONIOX_API_KEY`（默认）或阿里云百炼的 `DASHSCOPE_API_KEY` |
 | 剧情库 | 向量化的 key：`SILICONFLOW_API_KEY`（默认）或 `GEMINI_API_KEY` |
 | 检索与记忆 | 向量化的 key、`SILICONFLOW_API_KEY`（重排），加判断模型：`JEV_API_KEY`（默认）、Cloudflare 或阿里云百炼的凭证 |
@@ -231,6 +231,7 @@ npm run build && BACKEND_URL=http://localhost:8000 npm run start   # 启动在 :
 - **界面**：克制的 LINE 风格，属于她的地方用她的印象色；落地页自成一个永远深色的视觉世界（[ADR-0016](docs/adr/0016-landing-page-is-its-own-visual-world.md)）。视觉规范见 [`DESIGN.md`](DESIGN.md)，组件写法的约定见 [`frontend/AGENTS.md`](frontend/AGENTS.md)。
 - **立绘**：要看立绘时，前端也要带上和 `.env` 一样的 `EIDOLON_STAND_ASSETS_URL`。
 - **README 的截图**：前后端都跑起来后，在 `frontend/` 下运行 `npm run readme-media`，会重新拍下 `docs/images/` 里的截图和动图。
+- **Android 壳**：想在手机上看前端时，用 `android/` 里的 WebView 包装和 `scripts/dev-local.sh` 起的本地栈；构建、安装和防火墙见 [`android/README.md`](android/README.md)。
 - **CI**：每个 PR 和 main 上的推送都由 GitHub Actions 跑上面这些检查和 shellcheck，再构建两个镜像；推送到 main 或 `v*` 标签时发布到 GHCR。Dependabot 每周一提依赖更新。
 
 ## 📁 项目结构

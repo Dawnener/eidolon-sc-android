@@ -397,8 +397,8 @@ async def make_client(
     of the one the settings describe (see `fakes.build_faked`); speech, the identity
     providers (the `github` and `google` fixtures), the LLM services users bring their
     own keys to (`own_llm`) and the price catalogs online (an empty `FakeCatalog`) are
-    fakes by default, and `voice_configured=False` leaves the deployer without speech
-    keys."""
+    fakes by default; `voice_configured=False` leaves the deployer without speech keys,
+    and `deployer_llm=False` leaves it without a chat or memory model (BYOK-only)."""
     backends: list[Backend] = []
     clients: list[httpx.AsyncClient] = []
 
@@ -408,6 +408,7 @@ async def make_client(
         *,
         settings: Settings = settings,
         voice_configured: bool = True,
+        deployer_llm: bool = True,
         **services: Any,
     ) -> httpx.AsyncClient:
         services.setdefault("identity_providers", {"github": github, "google": google})
@@ -416,6 +417,8 @@ async def make_client(
         services.setdefault("catalog_transport", FakeCatalog().transport())
         if not voice_configured:
             settings = replace(settings, soniox_api_key=None, fish_audio_api_key=None)
+        if not deployer_llm:
+            settings = replace(settings, chat_llm=None, background_llm=None)
         backend = build_faked(settings, llm, **services)
         backends.append(backend)
         client = httpx.AsyncClient(

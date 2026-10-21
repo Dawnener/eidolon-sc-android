@@ -1,6 +1,7 @@
 """Choosing each model slot's protocol, and the server refusing to start with a chat model
 that cannot stream or call tools."""
 
+import asyncio
 import json
 import threading
 from collections.abc import Callable, Iterator
@@ -10,6 +11,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+import uvicorn
 
 from eidolon.__main__ import main
 from eidolon.config import LLMProtocol, LLMSettings, Settings
@@ -67,6 +69,7 @@ async def test_each_model_slot_chooses_its_own_protocol(monkeypatch: pytest.Monk
     )
 
     settings = Settings.from_env()
+    assert settings.chat_llm is not None
 
     assert settings.chat_llm == LLMSettings(
         "https://chat.example/v1", "chat-key", "chat-model", protocol="anthropic"
@@ -86,6 +89,7 @@ async def test_the_protocol_defaults_to_chat_completions_and_the_background_foll
     set_chat_model(monkeypatch, "https://chat.example/v1")
 
     settings = Settings.from_env()
+    assert settings.chat_llm is not None
     assert await requested_path(settings.chat_llm) == "/v1/chat/completions"
 
     # The background model follows the chat model's protocol, but not its reply cap: a cap
@@ -93,6 +97,7 @@ async def test_the_protocol_defaults_to_chat_completions_and_the_background_foll
     monkeypatch.setenv("CHAT_LLM_PROTOCOL", "responses")
     monkeypatch.setenv("CHAT_LLM_MAX_TOKENS", "2048")
     settings = Settings.from_env()
+    assert settings.chat_llm is not None
     assert settings.chat_llm.max_tokens == 2048
     assert settings.background_llm == LLMSettings(
         "https://chat.example/v1", "chat-key", "chat-model", "responses"
@@ -131,6 +136,8 @@ def test_each_slot_has_its_own_effort_and_extra_body(monkeypatch: pytest.MonkeyP
     )
 
     settings = Settings.from_env()
+    assert settings.chat_llm is not None
+    assert settings.background_llm is not None
 
     assert settings.chat_llm.reasoning_effort == "none"
     assert settings.chat_llm.extra_body == {"enable_thinking": False}
@@ -162,10 +169,73 @@ def test_the_chat_model_has_an_effort_of_its_own_for_calls(monkeypatch: pytest.M
     )
 
     settings = Settings.from_env()
+    assert settings.chat_model is not None
+    assert settings.chat_llm is not None
+    assert settings.background_llm is not None
 
     assert settings.chat_model.text.reasoning_effort == "high"
     assert settings.chat_model.call == replace(settings.chat_llm, reasoning_effort="none")
     assert settings.background_llm.reasoning_effort is None
+
+
+def test_without_a_chat_model_the_settings_have_no_chat_or_background_model():
+    settings = Settings.from_env()
+
+    assert settings.chat_llm is None
+    assert settings.background_llm is None
+    assert settings.chat_model is None
+    assert settings.byok_only is True
+
+
+def test_a_partial_chat_model_is_refused_saying_all_three_are_needed(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("CHAT_LLM_BASE_URL", "https://chat.example/v1")
+
+    with pytest.raises(RuntimeError, match="要么都填，要么都留空"):
+        Settings.from_env()
+
+
+def test_a_background_model_without_a_chat_model_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("BACKGROUND_LLM_BASE_URL", "https://background.example/v1")
+    monkeypatch.setenv("BACKGROUND_LLM_API_KEY", "background-key")
+    monkeypatch.setenv("BACKGROUND_LLM_MODEL", "background-model")
+
+    with pytest.raises(RuntimeError, match="后台模型不能单独使用"):
+        Settings.from_env()
+
+
+def test_a_call_effort_without_a_chat_model_is_refused(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("CHAT_LLM_CALL_REASONING_EFFORT", "high")
+
+    with pytest.raises(RuntimeError, match="CHAT_LLM_CALL_REASONING_EFFORT"):
+        Settings.from_env()
+
+
+def test_the_server_starts_without_checking_a_chat_model(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    characters: CharacterConfig,
+):
+    monkeypatch.setenv("EIDOLON_DATABASE_PATH", str(tmp_path / "eidolon.db"))
+    monkeypatch.setenv("EIDOLON_CHARACTERS_PATH", str(characters.path))
+
+    def must_not_check(*_: object) -> None:
+        raise AssertionError("checked a chat model that is not configured")
+
+    def stop(app: object, **_: object) -> None:
+        asyncio.run(app.state.backend.aclose())  # pyright: ignore[reportAttributeAccessIssue]
+
+    monkeypatch.setattr("eidolon.__main__._check_chat_llm", must_not_check)
+    monkeypatch.setattr(uvicorn, "run", stop)
+
+    code = main(["serve"])
+
+    assert code == 0
+    assert "纯自带密钥" in capsys.readouterr().err
 
 
 def test_a_call_effort_the_chat_models_protocol_has_no_way_to_write_is_reported(

@@ -234,6 +234,16 @@ event loop."""
 DEFAULT_HISTORY_TURNS = 20
 """How many of a conversation's latest turns the chat model reads; memories carry the rest."""
 
+_LLM_FIELDS = (
+    "BASE_URL",
+    "API_KEY",
+    "MODEL",
+    "PROTOCOL",
+    "MAX_TOKENS",
+    "REASONING_EFFORT",
+    "EXTRA_BODY",
+)
+
 
 LLMProtocol = Literal["chat-completions", "responses", "anthropic"]
 """OpenAI-compatible Chat Completions, OpenAI Responses, or Anthropic Messages."""
@@ -322,16 +332,30 @@ class LLMSettings:
     """Merged into every request last (see `checked_extra_body`)."""
 
     @classmethod
-    def chat_from_env(cls) -> "LLMSettings":
+    def chat_from_env(cls) -> "LLMSettings | None":
         return cls._from_env("CHAT")
 
     @classmethod
-    def background_from_env(cls) -> "LLMSettings":
+    def background_from_env(cls) -> "LLMSettings | None":
         """The background model; each setting left unset is the chat model's."""
         return cls._from_env("BACKGROUND", fallback="CHAT")
 
     @classmethod
-    def _from_env(cls, slot: str, fallback: str | None = None) -> "LLMSettings":
+    def _from_env(cls, slot: str, fallback: str | None = None) -> "LLMSettings | None":
+        slot_configured = any(
+            os.environ.get(f"{slot}_LLM_{name}", "").strip() for name in _LLM_FIELDS
+        )
+        fallback_configured = fallback is not None and any(
+            os.environ.get(f"{fallback}_LLM_{name}", "").strip() for name in _LLM_FIELDS
+        )
+        if not slot_configured and not fallback_configured:
+            return None
+        if fallback is not None and slot_configured and not fallback_configured:
+            raise RuntimeError(
+                f"配置了 {slot}_LLM_* 但没有配置 {fallback}_LLM_*：后台模型不能单独使用，"
+                "要么同时配置对话模型，要么都留空"
+            )
+
         def value(name: str) -> str | None:
             names = [f"{slot}_LLM_{name}"] + ([f"{fallback}_LLM_{name}"] if fallback else [])
             return next((v for n in names if (v := os.environ.get(n))), None)
@@ -340,7 +364,11 @@ class LLMSettings:
             if found := value(name):
                 return found
             alternative = f"（或 {fallback}_LLM_{name}）" if fallback else ""
-            raise RuntimeError(f"环境变量 {slot}_LLM_{name}{alternative}未设置")
+            raise RuntimeError(
+                f"环境变量 {slot}_LLM_{name}{alternative}未设置；"
+                "对话模型的三项 BASE_URL、API_KEY、MODEL 要么都填，要么都留空"
+                "（留空即改用用户自带的 LLM）"
+            )
 
         protocol = value("PROTOCOL") or "chat-completions"
         if protocol not in LLM_PROTOCOLS:
@@ -401,9 +429,11 @@ class ChatModelSettings:
 class Settings:
     database_path: Path
     characters_path: Path
-    chat_llm: LLMSettings
-    background_llm: LLMSettings = None  # pyright: ignore[reportAssignmentType]  # see below
-    """Left out, the background model is the chat model."""
+    chat_llm: LLMSettings | None
+    """The deployer's chat model; None means a BYOK-only deployment, where every turn
+    and call must bring the user's own LLM (ADR-0028)."""
+    background_llm: LLMSettings | None = None
+    """Left out, the background model is the chat model's; None without either."""
     call_reasoning_effort: ReasoningEffort | None = None
     """The chat model's in calls (`CHAT_LLM_CALL_REASONING_EFFORT`): see `chat_model`."""
     ice_servers: list[IceServer] = field(default_factory=lambda: list(DEFAULT_ICE_SERVERS))
@@ -473,7 +503,18 @@ class Settings:
     every character's call background without her stand."""
 
     def __post_init__(self) -> None:
-        if self.background_llm is None:
+        if self.chat_llm is None:
+            if self.background_llm is not None:
+                raise RuntimeError(
+                    "配置了后台模型（BACKGROUND_LLM_*）但没有配置对话模型（CHAT_LLM_*）："
+                    "后台模型不能单独使用，要么同时配置对话模型，要么都留空"
+                )
+            if self.call_reasoning_effort is not None:
+                raise RuntimeError(
+                    "配置了 CHAT_LLM_CALL_REASONING_EFFORT，但没有配置对话模型（CHAT_LLM_*）："
+                    "要么同时配置对话模型，要么去掉这一项"
+                )
+        elif self.background_llm is None:
             object.__setattr__(self, "background_llm", self.chat_llm)
         if self.dev_login and self.domain:
             raise RuntimeError(
@@ -482,9 +523,17 @@ class Settings:
             )
 
     @property
-    def chat_model(self) -> ChatModelSettings:
-        """The chat model, as text turns and calls each use it."""
+    def chat_model(self) -> ChatModelSettings | None:
+        """The chat model, as text turns and calls each use it; None in BYOK-only mode."""
+        if self.chat_llm is None:
+            return None
         return ChatModelSettings(self.chat_llm, self.call_reasoning_effort)
+
+    @property
+    def byok_only(self) -> bool:
+        """Whether the deployment has no chat model of its own, so every turn and call
+        must bring the user's LLM (ADR-0028)."""
+        return self.chat_llm is None
 
     @property
     def stt_key(self) -> SttKey | None:
@@ -503,20 +552,38 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        if "EIDOLON_OWN_LLM_REQUIRED" in os.environ:  # users once had to bring their own LLM
-            log.warning(
-                "EIDOLON_OWN_LLM_REQUIRED no longer does anything: users need not bring their"
-                " own LLM, and only the limits hold them; delete it from .env"
-            )
         chat_llm = LLMSettings.chat_from_env()
+        background_llm = LLMSettings.background_from_env()
+        call_effort = None
+        if chat_llm is not None:
+            call_effort = effort_from_env("CHAT_LLM_CALL_REASONING_EFFORT", chat_llm.protocol)
+        elif os.environ.get("CHAT_LLM_CALL_REASONING_EFFORT", "").strip():
+            raise RuntimeError(
+                "配置了 CHAT_LLM_CALL_REASONING_EFFORT，但没有配置对话模型（CHAT_LLM_*）："
+                "要么同时配置对话模型，要么去掉这一项"
+            )
+        if chat_llm is None:
+            log.info(
+                "没有配置对话模型（CHAT_LLM_*）：这是纯自带密钥部署，"
+                "每个文字回合和通话都必须由用户自带 LLM"
+            )
+        if "EIDOLON_OWN_LLM_REQUIRED" in os.environ:  # users once had to bring their own LLM
+            if chat_llm is None:
+                log.warning(
+                    "EIDOLON_OWN_LLM_REQUIRED no longer does anything: this deployment"
+                    " already requires users' own LLM; delete it from .env"
+                )
+            else:
+                log.warning(
+                    "EIDOLON_OWN_LLM_REQUIRED no longer does anything: users need not bring"
+                    " their own LLM, and only the limits hold them; delete it from .env"
+                )
         return cls(
             database_path=database_path_from_env(),
             characters_path=characters_path_from_env(),
             chat_llm=chat_llm,
-            background_llm=LLMSettings.background_from_env(),
-            call_reasoning_effort=effort_from_env(
-                "CHAT_LLM_CALL_REASONING_EFFORT", chat_llm.protocol
-            ),
+            background_llm=background_llm,
+            call_reasoning_effort=call_effort,
             ice_servers=_ice_servers(os.environ.get("EIDOLON_ICE_SERVERS")),
             turn=TurnSettings.from_env(),
             stt_provider=_stt_provider(),

@@ -5,11 +5,11 @@
 这份指南说明每项功能怎么开、怎么调，以及开了以后角色会怎样表现。所有环境变量的逐项说明见 [`.env.example`](../.env.example)，部署到服务器的完整步骤见 [`deploy.md`](deploy.md)，术语见 [`GLOSSARY.md`](../GLOSSARY.md)。
 
 > [!TIP]
-> 只填对话模型（`CHAT_LLM_*`）就能文字聊天。下表列出其他功能各自要补上哪些配置：
+> 有两种部署方式：填齐对话模型的三项（`CHAT_LLM_*`）是**部署者模式**，部署者承担模型费用；三项全部留空是**纯自带密钥模式**，服务器不保存默认对话模型，每个文字回合和通话都必须由用户自带 LLM（通话还要自带语音密钥）。下表列出其他功能各自要补上哪些配置：
 >
 > | 功能 | 需要的配置 |
 > |---|---|
-> | 文字对话 | `CHAT_LLM_*` |
+> | 文字对话 | `CHAT_LLM_*`，或三项全部留空 + 用户在客户端自带 LLM |
 > | 语音通话 | `FISH_AUDIO_API_KEY`，加语音识别的 key：`SONIOX_API_KEY`（默认），或 `STT_PROVIDER=bailian` 加 `DASHSCOPE_API_KEY` |
 > | 剧情库（同步或导入） | 向量化的 key：`SILICONFLOW_API_KEY`（默认），或 `EMBEDDING_PROVIDER=gemini` 加 `GEMINI_API_KEY` |
 > | 检索与记忆 | 向量化的 key、`SILICONFLOW_API_KEY`（重排），加判断模型：`JEV_API_KEY`（默认），或 `JUDGE_PROVIDER=cloudflare` 加 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`，或 `JUDGE_PROVIDER=bailian` 加 `BAILIAN_JUDGE_API_KEY`、`BAILIAN_JUDGE_WORKSPACE_ID` |
@@ -51,13 +51,15 @@
 | `responses` | OpenAI Responses | `{地址}/responses` |
 | `anthropic` | Anthropic Messages | `{地址}/messages` |
 
-- **对话模型必须支持流式输出和工具调用**。后端启动时先发一次很小的检查请求，不满足、或地址密钥有误时拒绝启动，并说明是哪一项不满足、服务返回了什么。
+- **纯自带密钥模式**：`CHAT_LLM_BASE_URL`、`CHAT_LLM_API_KEY`、`CHAT_LLM_MODEL` 三项全部留空时，服务器不保存默认对话模型；每个文字回合和通话都必须由用户在「自带密钥」里填写 LLM（[ADR-0028](adr/0028-byok-only-without-a-deployer-chat-model.md)）。三项只填一部分会拒绝启动；`BACKGROUND_LLM_*` 不能单独配置。
+- **对话模型必须支持流式输出和工具调用**。配置了对话模型时，后端启动时先发一次很小的检查请求，不满足、或地址密钥有误时拒绝启动，并说明是哪一项不满足、服务返回了什么；三项全空时跳过这个检查。
 - 模型回复前输出的思考内容（reasoning / thinking）会被丢掉，不进回复。
 - Anthropic 接口必须给出回复长度上限，默认 16384 token，用 `CHAT_LLM_MAX_TOKENS`、`BACKGROUND_LLM_MAX_TOKENS` 调整。这一项两个模型各设各的，免得较长的人设初稿被截断。
 - **思考强度**（可选）：`CHAT_LLM_REASONING_EFFORT`、`BACKGROUND_LLM_REASONING_EFFORT` 填 `none`（关闭）、`minimal`、`low`、`medium`、`high`、`xhigh`、`max` 之一，不填就什么都不发，交给模型自己的默认（ADR-0019）。档位按接口原样发出：chat-completions 发 `reasoning_effort`，Responses 发 `reasoning.effort`，Anthropic 发 adaptive 思考加 `output_config.effort`、关闭时发 `thinking:{type:"disabled"}`。Anthropic 接口没有 `minimal`。对话模型的这一档服务不支持时，启动检查会报「思考强度『…』被服务拒绝」和服务的原话；后台模型启动时不检查，在后台保存时才检查。思考也算在回复长度上限里，选 `high` 及以上时上限留空或设宽裕一些。
-- **通话的思考强度**（可选）：`CHAT_LLM_CALL_REASONING_EFFORT` 只管对话模型在语音通话里的回合，`CHAT_LLM_REASONING_EFFORT` 只管文字对话，档位写法相同。不填就什么都不发，不沿用文字那一项。想让她在通话里开口快一些，可以只把这一项设成 `none` 或 `low`，文字对话保留原来那一档。两项不同时，启动检查各查一次，被拒时报错写明是「文字的思考强度」还是「通话的思考强度」。后台模型不受这两项影响。
+- **通话的思考强度**（可选）：`CHAT_LLM_CALL_REASONING_EFFORT` 只管对话模型在语音通话里的回合，`CHAT_LLM_REASONING_EFFORT` 只管文字对话，档位写法相同。不填就什么都不发，不沿用文字那一项。想让她在通话里开口快一些，可以只把这一项设成 `none` 或 `low`，文字对话保留原来那一档。两项不同时，启动检查各查一次，被拒时报错写明是「文字的思考强度」还是「通话的思考强度」。后台模型不受这两项影响；没有配置对话模型时不能填这一项。
 - **额外请求参数**（可选）：`CHAT_LLM_EXTRA_BODY`、`BACKGROUND_LLM_EXTRA_BODY` 填一个 JSON 对象，深合并进每次请求，最后合并，所以能覆盖思考强度生成的参数。用来填 Qwen 的 `enable_thinking`、GLM 和 Kimi 的 `thinking`、OpenRouter 的 `reasoning` 这类私有开关；这时思考强度留空，免得两套参数冲突。不能包含 `model`、`stream`、`stream_options`、`messages`、`input`、`instructions`、`system`、`tools`、`tool_choice`。
 - 后台模型没填的项沿用对话模型。例如只填 `BACKGROUND_LLM_MODEL`，就是在同一个服务上换一个便宜的模型。回复长度上限、思考强度和额外请求参数除外，这几项两个模型各设各的。
+- **纯自带密钥模式下**：`BACKGROUND_LLM_*` 全部留空；起标题用回合携带的用户后台模型（没有则用用户的 LLM）。记忆提取还需要部署者的向量化、重排和判断模型，没配就关闭。
 
 ## 角色
 
@@ -399,7 +401,7 @@ flowchart LR
 
 用户一阵子没来时，角色会在当前对话里先说几句，接着最近聊过的事或她记得的近况；越亲近来得越早，冷淡、疏远和冷却中不来，夜里也不来（[ADR-0026](adr/0026-reach-outs-are-not-turns.md)）。用户可以在设置的「搭话」里关掉。
 
-- **开关**：默认关。`.env` 里设 `EIDOLON_REACH_OUTS=1` 打开，也可以在后台配置页的「搭话」卡开关，后台改的优先于 `.env`。
+- **开关**：默认关。`.env` 里设 `EIDOLON_REACH_OUTS=1` 打开，也可以在后台配置页的「搭话」卡开关，后台改的优先于 `.env`。纯自带密钥模式（`CHAT_LLM_*` 全空）没有部署者对话模型，搭话会自动关闭，后台显示为不可用。
 - **每天上限**：默认每位用户每天最多 3 次（按用户档案里的时区划天，没填时区按北京时间），在同一张卡里改。
 - **费用**：用部署者的对话模型生成，花费由部署者出；用户自带了 LLM 也一样。不计入用户的限额。
 
@@ -447,7 +449,7 @@ docker compose exec backend eidolon user usage <用户 ID>            # 最近 2
 
 ## 自带密钥
 
-费用默认全部由部署者承担。用户可以在设置的「自带密钥」里填自己的 key，替部署者分担：
+费用在部署者模式下默认由部署者承担。用户可以在设置的「自带密钥」里填自己的 key，替部署者分担（[ADR-0017](adr/0017-own-api-keys-stay-in-the-browser.md)）；**纯自带密钥模式下这是必填项**，没有 LLM 的回合会被 429 拒绝，并提示去设置里填写。
 
 | 服务 | 填什么 | 用在哪里 |
 |---|---|---|
@@ -519,7 +521,7 @@ EIDOLON_STATUS_WINDOW_MINUTES=30
 | 用户（`/admin/users`） | 搜索用户，看登录方式和近期用量；封禁、解除封禁、单独设限额、删除 |
 
 - **覆盖 `.env`**：后台改过的项存在数据库里，优先于 `.env`，不用重启。保存前会先试调，试不通就不保存。进行中的通话按接通时的配置打完。
-- **只能在 `.env` 里改的**：管理者名单、`EIDOLON_SECRET_KEY`、OAuth、域名、WebRTC/TURN、备份、路径和向量化。
+- **只能在 `.env` 里改的**：管理者名单、`EIDOLON_SECRET_KEY`、OAuth、域名、WebRTC/TURN、备份、路径和向量化。纯自带密钥模式下，对话模型和后台模型在后台显示为不可用，不能从后台加回来；要切回部署者模式，得在 `.env` 里把 `CHAT_LLM_*` 三项填齐并重启。
 - **看不到的**：后台看不到任何人的对话、记忆、制作人档案、好感度、礼物、抽奖次数、每日任务和成就，看板只有所有用户合起来的统计。看板的数字来自运行记录（不含对话内容），保留 90 天。
 
 开启步骤、后台进不去时怎么办，见 [`deploy.md`](deploy.md) 的「后台」。

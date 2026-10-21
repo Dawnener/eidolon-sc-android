@@ -40,6 +40,7 @@ from eidolon.reply_format import SegmentComplete, SegmentDelta, SpeechDelta
 from eidolon.own_keys import (
     BroughtKeys,
     CallsUnavailable,
+    OwnLLMRequired,
     UnknownService,
     named_services,
 )
@@ -323,6 +324,12 @@ def create_app(backend: Backend) -> FastAPI:
     @app.exception_handler(CallsUnavailable)
     async def calls_unavailable(_: Request, e: CallsUnavailable) -> JSONResponse:
         return JSONResponse({"detail": str(e)}, status_code=503)
+
+    @app.exception_handler(OwnLLMRequired)
+    async def own_llm_required(_: Request, e: OwnLLMRequired) -> JSONResponse:
+        """This deployment has no chat model of its own: the client must bring the
+        user's LLM, the same shape as a limit that only own keys pass."""
+        return JSONResponse({"detail": str(e), "retry_at": None}, status_code=429)
 
     @app.exception_handler(Throttled)
     async def throttled(_: Request, e: Throttled) -> JSONResponse:
