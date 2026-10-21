@@ -15,6 +15,7 @@ import sc.eidolon.nativeapp.model.Memory
 import sc.eidolon.nativeapp.model.OwnKeysRequest
 import sc.eidolon.nativeapp.model.Photo
 import sc.eidolon.nativeapp.model.PhotoStatus
+import sc.eidolon.nativeapp.model.ProducerProfile
 import sc.eidolon.nativeapp.model.Recorded
 import sc.eidolon.nativeapp.model.ReachOutModel
 import sc.eidolon.nativeapp.model.Segment
@@ -49,6 +50,33 @@ fun ReachOutModelDto.toDomain(): ReachOutModel = ReachOutModel(
     model = model,
     protocol = protocol,
     last4 = last4,
+)
+
+@Serializable
+data class BirthdayDto(val month: Int, val day: Int)
+
+@Serializable
+data class ProfileDto(
+    @SerialName("form_of_address") val formOfAddress: String? = null,
+    val gender: String? = null,
+    val timezone: String? = null,
+    val birthday: BirthdayDto? = null,
+)
+
+@Serializable
+data class ProfileRequest(
+    @SerialName("form_of_address") val formOfAddress: String? = null,
+    val gender: String? = null,
+    val timezone: String? = null,
+    val birthday: BirthdayDto? = null,
+)
+
+fun ProfileDto.toDomain(): ProducerProfile = ProducerProfile(
+    formOfAddress = formOfAddress,
+    gender = gender,
+    timezone = timezone,
+    birthdayMonth = birthday?.month,
+    birthdayDay = birthday?.day,
 )
 
 @Serializable

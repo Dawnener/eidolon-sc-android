@@ -13,11 +13,18 @@ import sc.eidolon.nativeapp.data.local.OwnKeysStore
 import sc.eidolon.nativeapp.data.repo.CharacterRepository
 import sc.eidolon.nativeapp.data.repo.ConversationRepository
 import sc.eidolon.nativeapp.model.Character
+import sc.eidolon.nativeapp.model.Conversation
 import sc.eidolon.nativeapp.model.ConversationLog
 import sc.eidolon.nativeapp.model.Failure
 import sc.eidolon.nativeapp.model.LogAction
 import sc.eidolon.nativeapp.model.TurnEvent
 import java.time.Instant
+
+data class PastConversation(
+    val conversation: Conversation,
+    val log: ConversationLog,
+    val ended: Boolean,
+)
 
 data class ChatState(
     val loading: Boolean = true,
@@ -30,6 +37,9 @@ data class ChatState(
     val ended: Boolean = false,
     val coolingUntil: Instant? = null,
     val openError: String? = null,
+    val history: List<Conversation> = emptyList(),
+    val historyLoading: Boolean = false,
+    val viewing: PastConversation? = null,
 )
 
 class ChatViewModel(
@@ -51,7 +61,7 @@ class ChatViewModel(
     }
 
     fun retryOpen() {
-        state = state.copy(loading = true, openError = null)
+        state = state.copy(loading = true, openError = null, viewing = null)
         open()
     }
 
@@ -62,6 +72,7 @@ class ChatViewModel(
                     ?: error("角色不存在")
                 val conversations = conversationsRepo.forCharacter(characterId)
                 val conversation = conversations.firstOrNull() ?: conversationsRepo.create(characterId)
+                val history = if (conversations.isEmpty()) listOf(conversation) else conversations
                 val messages = conversationsRepo.messages(conversation.id)
                 state = state.copy(
                     loading = false,
@@ -70,6 +81,8 @@ class ChatViewModel(
                     log = ConversationLog().reduce(LogAction.Loaded(messages)),
                     ended = conversation.ended,
                     openError = null,
+                    history = history,
+                    viewing = null,
                 )
             } catch (error: Exception) {
                 state = state.copy(
@@ -85,7 +98,7 @@ class ChatViewModel(
     }
 
     fun send() {
-        if (state.busy || state.ended) return
+        if (state.busy || state.ended || state.viewing != null) return
         if (state.coolingUntil?.isAfter(Instant.now()) == true) return
         val text = state.draft.trim()
         if (text.isEmpty()) return
@@ -171,9 +184,72 @@ class ChatViewModel(
                     coolingUntil = null,
                     draft = "",
                     failure = null,
+                    viewing = null,
+                    history = conversationsRepo.forCharacter(characterId),
                 )
             } catch (error: Exception) {
                 state = state.copy(failure = Failure(error.message ?: "新对话没能开始"))
+            }
+        }
+    }
+
+    fun loadHistory() {
+        if (state.historyLoading) return
+        state = state.copy(historyLoading = true)
+        viewModelScope.launch {
+            try {
+                state = state.copy(
+                    history = conversationsRepo.forCharacter(characterId),
+                    historyLoading = false,
+                )
+            } catch (error: Exception) {
+                state = state.copy(
+                    historyLoading = false,
+                    failure = Failure(error.message ?: "历史对话没能读取"),
+                )
+            }
+        }
+    }
+
+    /** 打开一段历史对话；她当前的那段就是回到当前，不再单独加载。 */
+    fun viewPast(conversation: Conversation) {
+        if (conversation.id == state.conversationId) {
+            state = state.copy(viewing = null)
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val messages = conversationsRepo.messages(conversation.id)
+                state = state.copy(
+                    viewing = PastConversation(
+                        conversation = conversation,
+                        log = ConversationLog().reduce(LogAction.Loaded(messages)),
+                        ended = conversation.ended,
+                    ),
+                )
+            } catch (error: Exception) {
+                state = state.copy(failure = Failure(error.message ?: "这段历史对话没能打开"))
+            }
+        }
+    }
+
+    fun backToCurrent() {
+        state = state.copy(viewing = null)
+    }
+
+    fun deleteConversation(conversation: Conversation) {
+        if (conversation.id == state.conversationId) return
+        viewModelScope.launch {
+            try {
+                conversationsRepo.delete(conversation.id)
+                if (state.viewing?.conversation?.id == conversation.id) {
+                    state = state.copy(viewing = null)
+                }
+                state = state.copy(history = conversationsRepo.forCharacter(characterId))
+            } catch (error: Exception) {
+                state = state.copy(
+                    failure = Failure(error.message ?: "历史对话没能删除"),
+                )
             }
         }
     }

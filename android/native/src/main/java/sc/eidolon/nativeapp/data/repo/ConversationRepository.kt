@@ -15,6 +15,8 @@ class ConversationRepository(private val api: EidolonApi) {
 
     suspend fun create(characterId: String): Conversation = api.createConversation(characterId)
 
+    suspend fun delete(conversationId: String) = api.deleteConversation(conversationId)
+
     suspend fun messages(conversationId: String): List<Recorded> = api.messages(conversationId)
 
     fun turn(conversationId: String, text: String, ownKeys: OwnKeysRequest?): Flow<TurnEvent> =

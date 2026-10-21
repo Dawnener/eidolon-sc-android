@@ -1,6 +1,8 @@
 package sc.eidolon.nativeapp.ui.chat
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -28,11 +31,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -64,6 +72,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -74,9 +83,11 @@ import kotlinx.coroutines.flow.collectLatest
 import sc.eidolon.nativeapp.AppContainer
 import sc.eidolon.nativeapp.core.Time
 import sc.eidolon.nativeapp.model.ChatLine
+import sc.eidolon.nativeapp.model.Conversation
 import sc.eidolon.nativeapp.model.Entry
 import sc.eidolon.nativeapp.model.EventKind
 import sc.eidolon.nativeapp.model.Failure
+import sc.eidolon.nativeapp.model.LastPreview
 import sc.eidolon.nativeapp.model.MessageLines
 import sc.eidolon.nativeapp.model.PhotoStatus
 import sc.eidolon.nativeapp.ui.components.CharacterAvatar
@@ -91,6 +102,7 @@ import sc.eidolon.nativeapp.ui.theme.ProducerInkTextDark
 import sc.eidolon.nativeapp.ui.theme.herColors
 import java.time.Instant
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,6 +138,17 @@ fun ChatScreen(
     }
     val zone = remember { Time.zone() }
     val cooling = state.coolingUntil?.isAfter(now) == true
+    var showHistory by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<Conversation?>(null) }
+    val viewing = state.viewing
+    BackHandler(enabled = viewing != null) { vm.backToCurrent() }
+    val displayState = viewing?.let {
+        state.copy(
+            log = it.log,
+            conversationId = it.conversation.id,
+            ended = it.ended,
+        )
+    } ?: state
 
     Scaffold(
         // 外层 MainScaffold 已经为系统状态栏/导航栏留过边距，并在根上处理 IME 抬起
@@ -134,8 +157,13 @@ fun ChatScreen(
             TopAppBar(
                 windowInsets = WindowInsets(0, 0, 0, 0),
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回对话列表")
+                    IconButton(
+                        onClick = { if (viewing != null) vm.backToCurrent() else onBack() },
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = if (viewing != null) "回到当前对话" else "返回对话列表",
+                        )
                     }
                 },
                 title = {
@@ -152,10 +180,30 @@ fun ChatScreen(
                                 modifier = avatarModifier(characterId),
                             )
                         }
-                        Text(
-                            text = state.character?.name ?: "对话",
-                            style = MaterialTheme.typography.titleMedium,
-                        )
+                        Column {
+                            Text(
+                                text = state.character?.name ?: "对话",
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            if (viewing != null) {
+                                Text(
+                                    text = "历史对话",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            vm.loadHistory()
+                            showHistory = true
+                        },
+                        enabled = !state.loading,
+                    ) {
+                        Icon(Icons.Outlined.History, contentDescription = "历史对话")
                     }
                 },
             )
@@ -175,28 +223,202 @@ fun ChatScreen(
                 }
                 else -> {
                     MessageList(
-                        state = state,
+                        state = displayState,
                         her = her,
                         baseUrl = baseUrl,
                         now = now,
                         zone = zone,
                         modifier = Modifier.weight(1f),
                     )
-                    Composer(
-                        state = state,
-                        name = state.character?.name ?: "她",
-                        cooling = cooling,
-                        zone = zone,
-                        onDraft = vm::onDraftChange,
-                        onSend = vm::send,
-                        onNewConversation = vm::newConversation,
-                        onOpenSettings = onOpenSettings,
-                        onDismissFailure = vm::dismissFailure,
-                    )
+                    if (viewing != null) {
+                        PastConversationFooter(
+                            ended = viewing.ended,
+                            onBackToCurrent = vm::backToCurrent,
+                        )
+                    } else {
+                        Composer(
+                            state = state,
+                            name = state.character?.name ?: "她",
+                            cooling = cooling,
+                            zone = zone,
+                            onDraft = vm::onDraftChange,
+                            onSend = vm::send,
+                            onNewConversation = vm::newConversation,
+                            onOpenSettings = onOpenSettings,
+                            onDismissFailure = vm::dismissFailure,
+                        )
+                    }
                 }
             }
         }
     }
+
+    if (showHistory) {
+        ModalBottomSheet(onDismissRequest = { showHistory = false }) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp),
+            ) {
+                Text(
+                    text = "历史对话",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                if (state.historyLoading) {
+                    Text(
+                        text = "正在读取历史对话…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (state.history.isEmpty()) {
+                    Text(
+                        text = "还没有历史对话",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                        items(state.history, key = { it.id }) { conversation ->
+                            HistoryRow(
+                                conversation = conversation,
+                                current = conversation.id == state.conversationId,
+                                viewing = conversation.id == viewing?.conversation?.id,
+                                zone = zone,
+                                onClick = {
+                                    showHistory = false
+                                    vm.viewPast(conversation)
+                                },
+                                onDelete = { pendingDelete = conversation },
+                            )
+                            HorizontalDivider()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pendingDelete?.let { conversation ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除这段历史对话？") },
+            text = { Text("删除后无法恢复。她当前正在使用的那段对话不能删除。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDelete = null
+                        vm.deleteConversation(conversation)
+                    },
+                ) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun PastConversationFooter(ended: Boolean, onBackToCurrent: () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("这是你们的历史对话", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    text = if (ended) {
+                        "她已经结束了这段对话，不能再回复。"
+                    } else {
+                        "回到当前对话才能继续聊天。"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(onClick = onBackToCurrent) { Text("回到当前对话") }
+        }
+    }
+}
+
+@Composable
+private fun HistoryRow(
+    conversation: Conversation,
+    current: Boolean,
+    viewing: Boolean,
+    zone: ZoneId,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = conversation.title ?: previewOf(conversation.lastMessage) ?: "新的对话",
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (current) {
+                    Text(
+                        text = "当前",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else if (viewing) {
+                    Text(
+                        text = "正在看",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            val at = conversation.lastMessage?.at ?: conversation.createdAt
+            Text(
+                text = buildString {
+                    append(at.atZone(zone).format(HISTORY_TIME))
+                    previewOf(conversation.lastMessage)?.let {
+                        append(" · ")
+                        append(it)
+                    }
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (!current) {
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Outlined.Delete, contentDescription = "删除这段历史对话")
+            }
+        }
+    }
+}
+
+private val HISTORY_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("M月d日 HH:mm")
+
+private fun previewOf(last: LastPreview?): String? = when {
+    last == null -> null
+    !last.text.isNullOrBlank() -> last.text
+    !last.zh.isNullOrBlank() -> last.zh
+    !last.ja.isNullOrBlank() -> last.ja
+    last.reachOut -> "她主动搭话了"
+    last.photo -> "照片"
+    last.eventKind != null -> "对话事件"
+    else -> null
 }
 
 @Composable

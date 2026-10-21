@@ -43,6 +43,7 @@ import sc.eidolon.nativeapp.model.OwnLlmRequest
 import sc.eidolon.nativeapp.model.OwnMemoryLlmRequest
 import sc.eidolon.nativeapp.model.OwnSttRequest
 import sc.eidolon.nativeapp.model.OwnTtsRequest
+import sc.eidolon.nativeapp.model.ProducerProfile
 import sc.eidolon.nativeapp.model.Recorded
 import sc.eidolon.nativeapp.model.ReachOutModel
 import sc.eidolon.nativeapp.model.SttCheckResponse
@@ -94,6 +95,11 @@ class EidolonApi(
     suspend fun deleteReachOutModel() {
         deleteNoContent("/api/account/reach-out-llm")
     }
+
+    suspend fun profile(): ProducerProfile = getJson<ProfileDto>("/api/profile").toDomain()
+
+    suspend fun saveProfile(request: ProfileRequest): ProducerProfile =
+        putJson<ProfileRequest, ProfileDto>("/api/profile", request).toDomain()
 
     /** Her reach-outs, as they are recorded, while the caller keeps collecting. */
     fun pushEvents(): Flow<PushEventDto> = flow {
@@ -171,6 +177,10 @@ class EidolonApi(
             "/api/conversations",
             NewConversationRequest(characterId),
         ).toDomain()
+
+    suspend fun deleteConversation(conversationId: String) {
+        deleteNoContent("/api/conversations/$conversationId")
+    }
 
     suspend fun messages(conversationId: String): List<Recorded> {
         val raw = getRaw("/api/conversations/$conversationId/messages")
@@ -329,7 +339,7 @@ class EidolonApi(
         post(path, body)
     }
 
-    private suspend fun putNoContent(path: String, body: String) = withContext(Dispatchers.IO) {
+    private suspend fun put(path: String, body: String): String = withContext(Dispatchers.IO) {
         val response = execute(
             http.api,
             Request.Builder().url(url(path)).put(body.toRequestBody(JSON)).build(),
@@ -337,8 +347,16 @@ class EidolonApi(
         response.use {
             val text = it.body?.string().orEmpty()
             if (!it.isSuccessful) throw ApiError.from(it.code, text, it.header("Retry-After"))
+            text
         }
     }
+
+    private suspend fun putNoContent(path: String, body: String) {
+        put(path, body)
+    }
+
+    private suspend inline fun <reified B, reified T> putJson(path: String, body: B): T =
+        json.decodeFromString<T>(put(path, json.encodeToString(body)))
 
     private suspend fun deleteNoContent(path: String) = withContext(Dispatchers.IO) {
         val response = execute(http.api, Request.Builder().url(url(path)).delete().build())

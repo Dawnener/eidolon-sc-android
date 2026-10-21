@@ -40,6 +40,7 @@ import sc.eidolon.nativeapp.ui.chat.ChatScreen
 import sc.eidolon.nativeapp.ui.conversations.ConversationListScreen
 import sc.eidolon.nativeapp.ui.memories.MemoriesScreen
 import sc.eidolon.nativeapp.ui.ownkeys.OwnKeysScreen
+import sc.eidolon.nativeapp.ui.profile.ProfileScreen
 import sc.eidolon.nativeapp.ui.reachout.ReachOutModelScreen
 import sc.eidolon.nativeapp.ui.settings.SettingsScreen
 import sc.eidolon.nativeapp.ui.setup.ServerSetupScreen
@@ -222,11 +223,15 @@ fun MainScaffold(container: AppContainer, account: Account) {
                     SettingsScreen(
                         container = container,
                         account = account,
+                        onOpenProfile = { nav.navigate(Routes.Profile) },
                         onOpenOwnKeys = { nav.navigate(Routes.OwnKeys) },
                         onOpenReachOutModel = { nav.navigate(Routes.ReachOutModel) },
                         onOpenMemories = { nav.navigate(Routes.Memories) },
                         onChangeServer = { nav.navigate(Routes.Server) },
                     )
+                }
+                composable(Routes.Profile) {
+                    ProfileScreen(container) { nav.popBackStack() }
                 }
                 composable(Routes.OwnKeys) {
                     OwnKeysScreen(container) { nav.popBackStack() }

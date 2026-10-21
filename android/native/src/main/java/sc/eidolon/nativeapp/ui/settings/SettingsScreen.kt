@@ -44,6 +44,7 @@ import sc.eidolon.nativeapp.model.Account
 fun SettingsScreen(
     container: AppContainer,
     account: Account,
+    onOpenProfile: () -> Unit,
     onOpenOwnKeys: () -> Unit,
     onOpenReachOutModel: () -> Unit,
     onOpenMemories: () -> Unit,
@@ -78,6 +79,12 @@ fun SettingsScreen(
             subtitle = "账号 ${account.id} · ${
                 account.signInMethods.joinToString("、") { it.provider }.ifBlank { "开发登录" }
             }",
+        )
+        HorizontalDivider()
+        SettingsRow(
+            title = "制作人档案",
+            subtitle = "称呼、性别、时区、生日",
+            onClick = onOpenProfile,
         )
         HorizontalDivider()
         SettingsRow(

@@ -118,6 +118,15 @@ data class Account(
     val sponsorVersion: String?,
 )
 
+/** The producer profile the characters are told about; every field may be left empty. */
+data class ProducerProfile(
+    val formOfAddress: String? = null,
+    val gender: String? = null,
+    val timezone: String? = null,
+    val birthdayMonth: Int? = null,
+    val birthdayDay: Int? = null,
+)
+
 data class SignInMethod(val provider: String, val displayName: String? = null, val email: String? = null)
 
 /** The model kept on the server for reach-outs; the key itself never comes back. */
