@@ -3,6 +3,7 @@ package sc.eidolon.nativeapp.ui.chat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -46,6 +47,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,6 +70,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import sc.eidolon.nativeapp.AppContainer
 import sc.eidolon.nativeapp.core.Time
 import sc.eidolon.nativeapp.model.ChatLine
@@ -211,14 +214,39 @@ private fun MessageList(
         initialFirstVisibleItemIndex = lines.lastIndex.coerceAtLeast(0),
     )
     var initialScrollDone by remember { mutableStateOf(false) }
-    LaunchedEffect(state.conversationId) {
-        initialScrollDone = false
-    }
     val nearBottom by remember {
         derivedStateOf {
             val info = listState.layoutInfo
             val last = info.visibleItemsInfo.lastOrNull()
             last == null || last.index >= info.totalItemsCount - 2
+        }
+    }
+    // 用户最后一次停止滚动时是否在底部。输入法改变可视高度时只据此决定要不要贴底，
+    // 不会把正在翻看历史的人强行拉回最新一条。
+    var userAtBottom by remember { mutableStateOf(true) }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.collectLatest { scrolling ->
+            if (scrolling) {
+                // 滚动过程中一直更新，翻到顶部后立刻点输入框也不会误判
+                snapshotFlow { nearBottom }.collect { userAtBottom = it }
+            } else {
+                withFrameNanos { }
+                userAtBottom = nearBottom
+            }
+        }
+    }
+    LaunchedEffect(state.conversationId) {
+        initialScrollDone = false
+    }
+    // 发送后平滑滚到最新一条：按用户消息数量触发，流式回复增加行不会打断这段动画。
+    val userMessages = lines.count { it is ChatLine.Item && it.entry is Entry.User }
+    var seenUserMessages by remember(state.conversationId) { mutableStateOf(userMessages) }
+    LaunchedEffect(userMessages) {
+        if (userMessages > seenUserMessages && initialScrollDone) {
+            seenUserMessages = userMessages
+            withFrameNanos { }
+            listState.animateScrollToItem(lines.lastIndex)
+            userAtBottom = true
         }
     }
     LaunchedEffect(lines.size, state.log.entries, initialScrollDone) {
@@ -228,6 +256,7 @@ private fun MessageList(
             withFrameNanos { }
             listState.scrollToItem(lines.lastIndex)
             initialScrollDone = true
+            userAtBottom = true
         }
     }
     // 输入法弹出时内容区是从底部压缩的，列表的滚动位置不会自己跟着变，
@@ -236,7 +265,7 @@ private fun MessageList(
         derivedStateOf { listState.layoutInfo.viewportSize.height }
     }
     LaunchedEffect(viewportHeight) {
-        if (viewportHeight > 0 && lines.isNotEmpty()) {
+        if (viewportHeight > 0 && lines.isNotEmpty() && userAtBottom) {
             // requestScrollToItem 在下一轮测量时直接生效，不再等一帧，
             // 这样列表和输入法抬起的动画同步，不会慢半拍
             listState.requestScrollToItem(lines.lastIndex)
@@ -316,32 +345,38 @@ private fun UserBubble(entry: Entry.User, last: Boolean, zone: ZoneId) {
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val background = if (dark) ProducerInkDark else ProducerInk
     val foreground = if (dark) ProducerInkTextDark else ProducerInkText
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
-    ) {
-        Column(horizontalAlignment = Alignment.End) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.78f)
-                    .widthIn(max = 520.dp)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(background)
-                    .padding(12.dp),
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        // 短消息按内容自适应；长消息最多占这一行的 78%，再受 520dp 限制。
+        val bubbleMax = minOf(maxWidth * 0.78f, 520.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            Column(
+                modifier = Modifier.widthIn(max = bubbleMax),
+                horizontalAlignment = Alignment.End,
             ) {
-                Text(
-                    text = entry.text,
-                    color = foreground,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-            }
-            if (last) {
-                Text(
-                    text = Time.formatClock(entry.at, zone),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
+                Box(
+                    modifier = Modifier
+                        .widthIn(max = bubbleMax)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(background)
+                        .padding(12.dp),
+                ) {
+                    Text(
+                        text = entry.text,
+                        color = foreground,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+                if (last) {
+                    Text(
+                        text = Time.formatClock(entry.at, zone),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
             }
         }
     }
@@ -357,94 +392,99 @@ private fun CharacterBubble(
     zone: ZoneId,
 ) {
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Start,
-        verticalAlignment = Alignment.Top,
-    ) {
-        if (first && character != null) {
-            CharacterAvatar(
-                name = character.name,
-                color = character.color,
-                url = character.avatarUrl?.let { baseUrl + it },
-                size = 36.dp,
-            )
-        } else {
-            Spacer(Modifier.width(44.dp))
-        }
-        Column(modifier = Modifier.padding(start = 8.dp).weight(1f)) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        // 短回复按内容自适应；长回复最多占这一行的 82%，再受 520dp 限制。
+        val bubbleMax = minOf(maxWidth * 0.82f, 520.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start,
+            verticalAlignment = Alignment.Top,
+        ) {
             if (first && character != null) {
-                Text(
-                    text = character.name,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 2.dp),
+                CharacterAvatar(
+                    name = character.name,
+                    color = character.color,
+                    url = character.avatarUrl?.let { baseUrl + it },
+                    size = 36.dp,
                 )
+            } else {
+                Spacer(Modifier.width(44.dp))
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.82f)
-                    .widthIn(max = 520.dp)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(if (dark) HerBubbleDark else MaterialTheme.colorScheme.surface)
-                    .padding(12.dp),
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (entry.segments.isEmpty()) {
-                        Text(
-                            text = "…",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    } else {
-                        entry.segments.forEach { segment ->
-                            if (segment.ja.isNotBlank()) {
-                                Text(
-                                    text = segment.ja,
-                                    style = MaterialTheme.typography.bodyLarge.copy(
-                                        fontSize = 16.sp,
-                                        lineHeight = 24.sp,
-                                    ),
-                                )
+            Column(modifier = Modifier.padding(start = 8.dp).weight(1f)) {
+                if (first && character != null) {
+                    Text(
+                        text = character.name,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 2.dp),
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .widthIn(max = bubbleMax)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(if (dark) HerBubbleDark else MaterialTheme.colorScheme.surface)
+                        .padding(12.dp),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (entry.segments.isEmpty()) {
+                            Text(
+                                text = "…",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            entry.segments.forEach { segment ->
+                                if (segment.ja.isNotBlank()) {
+                                    Text(
+                                        text = segment.ja,
+                                        style = MaterialTheme.typography.bodyLarge.copy(
+                                            fontSize = 16.sp,
+                                            lineHeight = 24.sp,
+                                        ),
+                                    )
+                                }
+                                if (segment.zh.isNotBlank()) {
+                                    Text(
+                                        text = segment.zh,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontSize = 12.sp,
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
-                            if (segment.zh.isNotBlank()) {
+                        }
+                        entry.photo?.let { photo ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(120.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center,
+                            ) {
                                 Text(
-                                    text = segment.zh,
-                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                    text = when (photo.status) {
+                                        PhotoStatus.Pending -> "照片正在生成"
+                                        PhotoStatus.Failed -> "照片没发出来"
+                                        PhotoStatus.Ready -> "照片"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
                     }
-                    entry.photo?.let { photo ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = when (photo.status) {
-                                    PhotoStatus.Pending -> "照片正在生成"
-                                    PhotoStatus.Failed -> "照片没发出来"
-                                    PhotoStatus.Ready -> "照片"
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
                 }
-            }
-            if (last) {
-                Text(
-                    text = Time.formatClock(entry.at, zone),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
+                if (last) {
+                    Text(
+                        text = Time.formatClock(entry.at, zone),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
             }
         }
     }
