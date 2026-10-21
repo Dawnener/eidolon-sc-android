@@ -1,5 +1,12 @@
 package sc.eidolon.nativeapp.ui.settings
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,6 +26,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,6 +34,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import sc.eidolon.nativeapp.AppContainer
@@ -47,6 +56,11 @@ fun SettingsScreen(
     var reachOuts by remember(account.reachOuts) { mutableStateOf(account.reachOuts) }
     var reachOutsSaving by remember { mutableStateOf(false) }
     var reachOutsError by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val pushEnabled by container.push.enabled.collectAsState()
+    val notificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
 
     Column(
         modifier = Modifier
@@ -95,6 +109,23 @@ fun SettingsScreen(
                     }
                     reachOutsSaving = false
                 }
+            },
+        )
+        HorizontalDivider()
+        PushRow(
+            enabled = pushEnabled,
+            onCheckedChange = { on ->
+                if (
+                    on && Build.VERSION.SDK_INT >= 33 &&
+                    context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                    PackageManager.PERMISSION_GRANTED
+                ) {
+                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                container.push.setEnabled(on)
+            },
+            onOpenBatterySettings = {
+                context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
             },
         )
         HorizontalDivider()
@@ -165,6 +196,44 @@ fun SettingsScreen(
                 TextButton(onClick = { confirmDelete = false }) { Text("取消") }
             },
         )
+    }
+}
+
+@Composable
+private fun PushRow(
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    onOpenBatterySettings: () -> Unit,
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text("推送", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    text = if (enabled) {
+                        "前台服务维持后台连接，会有一条低优先级常驻通知"
+                    } else {
+                        "关闭：不维持后台连接"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = onCheckedChange,
+            )
+        }
+        if (enabled) {
+            TextButton(onClick = onOpenBatterySettings) { Text("省电设置") }
+        }
     }
 }
 

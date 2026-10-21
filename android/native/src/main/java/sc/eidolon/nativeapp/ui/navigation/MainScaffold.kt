@@ -24,6 +24,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +56,12 @@ fun MainScaffold(container: AppContainer, account: Account) {
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
     val showBar = route == Routes.Conversations || route == Routes.Settings
+    val pendingChat by container.pendingChat.collectAsState()
+    LaunchedEffect(pendingChat) {
+        val characterId = pendingChat ?: return@LaunchedEffect
+        container.pendingChat.value = null
+        nav.navigate(Routes.chat(characterId))
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),

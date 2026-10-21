@@ -1,6 +1,7 @@
 package sc.eidolon.nativeapp.data.local
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -18,6 +19,7 @@ class PreferencesStore(
         val serverUrl = stringPreferencesKey("server_url")
         val userId = stringPreferencesKey("user_id")
         val accountName = stringPreferencesKey("account_name")
+        val pushEnabled = booleanPreferencesKey("push_enabled")
 
         fun ownKeys(authority: String, userId: String) =
             stringPreferencesKey("own_keys.$authority.$userId")
@@ -34,6 +36,13 @@ class PreferencesStore(
     suspend fun userId(): String? = context.eidolonDataStore.data.first()[Keys.userId]
 
     suspend fun accountName(): String? = context.eidolonDataStore.data.first()[Keys.accountName]
+
+    suspend fun pushEnabled(): Boolean =
+        context.eidolonDataStore.data.first()[Keys.pushEnabled] ?: false
+
+    suspend fun setPushEnabled(value: Boolean) {
+        context.eidolonDataStore.edit { prefs -> prefs[Keys.pushEnabled] = value }
+    }
 
     suspend fun setUser(userId: String, name: String) {
         context.eidolonDataStore.edit { prefs ->

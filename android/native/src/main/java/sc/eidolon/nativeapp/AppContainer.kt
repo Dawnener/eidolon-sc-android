@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import sc.eidolon.nativeapp.data.api.ApiErrorBus
 import sc.eidolon.nativeapp.data.api.EidolonApi
@@ -17,6 +18,8 @@ import sc.eidolon.nativeapp.data.local.ServerStore
 import sc.eidolon.nativeapp.data.repo.CharacterRepository
 import sc.eidolon.nativeapp.data.repo.ConversationRepository
 import sc.eidolon.nativeapp.data.repo.MemoryRepository
+import sc.eidolon.nativeapp.push.PushController
+import sc.eidolon.nativeapp.push.PushNotifier
 import sc.eidolon.nativeapp.session.SessionController
 
 class AppContainer(context: Context) {
@@ -37,6 +40,9 @@ class AppContainer(context: Context) {
     val conversations = ConversationRepository(api)
     val memories = MemoryRepository(api)
     val session = SessionController(api, serverStore, preferences, cookieStore, ownKeysStore, serverState)
+    val pushNotifier = PushNotifier(appContext)
+    val push = PushController(appContext, session, preferences)
+    val pendingChat = MutableStateFlow<String?>(null)
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     init {

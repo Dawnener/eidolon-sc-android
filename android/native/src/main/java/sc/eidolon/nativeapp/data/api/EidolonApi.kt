@@ -95,6 +95,48 @@ class EidolonApi(
         deleteNoContent("/api/account/reach-out-llm")
     }
 
+    /** Her reach-outs, as they are recorded, while the caller keeps collecting. */
+    fun pushEvents(): Flow<PushEventDto> = flow {
+        val request = Request.Builder()
+            .url(url("/api/push/stream"))
+            .header("Accept", "text/event-stream")
+            .get()
+            .build()
+        val call = http.sse.newCall(request)
+        currentCoroutineContext().job.invokeOnCompletion { call.cancel() }
+        val response = try {
+            call.execute()
+        } catch (e: IOException) {
+            currentCoroutineContext().ensureActive()
+            throw e
+        }
+        try {
+            if (!response.isSuccessful) {
+                throw ApiError.from(
+                    response.code,
+                    response.body?.string().orEmpty(),
+                    response.header("Retry-After"),
+                )
+            }
+            val source = response.body?.source() ?: throw ApiError.from(500, "空的推送流")
+            val decoder = SseDecoder()
+            val buffer = Buffer()
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val read = source.read(buffer, 8192)
+                if (read == -1L) break
+                for (payload in decoder.feed(buffer.readByteArray())) {
+                    val event = runCatching {
+                        json.decodeFromString<PushEventDto>(payload)
+                    }.getOrNull() ?: continue
+                    emit(event)
+                }
+            }
+        } finally {
+            response.close()
+        }
+    }.flowOn(Dispatchers.IO)
+
     suspend fun consent() {
         postNoContent(
             "/api/account/consent",

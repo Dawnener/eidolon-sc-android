@@ -52,6 +52,15 @@ fun ReachOutModelDto.toDomain(): ReachOutModel = ReachOutModel(
 )
 
 @Serializable
+data class PushEventDto(
+    val type: String = "reach_out",
+    @SerialName("character_id") val characterId: String = "",
+    @SerialName("conversation_id") val conversationId: String = "",
+    val title: String = "",
+    val body: String = "",
+)
+
+@Serializable
 data class ReachOutSwitchRequest(val on: Boolean)
 
 @Serializable
