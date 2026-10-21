@@ -402,6 +402,30 @@ def create_app(backend: Backend) -> FastAPI:
             body["deployment_id"] = store.deployment_id()
         return JSONResponse(body, status_code=200 if ok else 503)
 
+    @app.get("/api/push/stream")
+    async def push_stream(user_id: UserId, request: Request) -> StreamingResponse:
+        """Her reach-outs just recorded, as server-sent events, while the client keeps the
+        connection open; a comment every 50 seconds keeps proxies from closing it without
+        waking a phone more than it must. Nothing is replayed: what was said while no one
+        listened is in the conversation."""
+        async def events() -> AsyncIterator[str]:
+            with backend.pushes.subscribe(user_id) as queue:
+                while True:
+                    if await request.is_disconnected():
+                        return
+                    try:
+                        event = await asyncio.wait_for(queue.get(), timeout=50)
+                    except TimeoutError:
+                        yield ": ping\n\n"
+                        continue
+                    yield f"data: {json.dumps(event.shown(), ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     add_account_routes(app, backend)
     add_admin_routes(app, backend)
     add_dashboard_routes(app, backend)

@@ -58,6 +58,7 @@ from eidolon.live_config import LiveConfig, Reach
 from eidolon.memory import Memories
 from eidolon.price_catalog import Catalog
 from eidolon.prices import Prices
+from eidolon.push import PushHub
 from eidolon.own_keys import LLMService, OwnImageService, OwnKeys, ProviderLLMService
 from eidolon.photos import Photos
 from eidolon.proxy import ProxyRoutes
@@ -144,6 +145,8 @@ class Backend:
     """Has characters reach out to users once their time comes."""
     reach_out_models: ReachOutModels
     """Users' own models for reach-outs, kept encrypted with the deployment's secret key."""
+    pushes: PushHub
+    """Reach-outs just recorded, for clients keeping a push connection open."""
     world: World | None = None
     """The world setting; None without its data file."""
     corpus: StoryCorpus | None = None
@@ -234,6 +237,7 @@ def build(
     store = Store(database)
     reach_out_models = ReachOutModels(settings.database_path, settings.secret_key)
     closers.append(reach_out_models.close)
+    pushes = PushHub()
     if identity_providers is None:
         identity_providers = open_identity_providers(settings.github, settings.google)
         closers.extend(p.aclose for p in identity_providers.values())
@@ -397,7 +401,7 @@ def build(
     engine.on_ended(calls.conversation_ended)
     reach_outs = ReachOuts(
         database, store, engine, characters, config, reach_out_models, own_keys,
-        affinities, activity, calls.in_call, clock, random or secure_random,
+        pushes, affinities, activity, calls.in_call, clock, random or secure_random,
     )
     config.on_change(gifts.notice)
     return Backend(
@@ -431,6 +435,7 @@ def build(
         data_packages=DataPackages(database, store, memories, characters, gift_catalog, clock),
         reach_outs=reach_outs,
         reach_out_models=reach_out_models,
+        pushes=pushes,
         world=world,
         corpus=corpus,
         _closers=closers,

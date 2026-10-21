@@ -50,6 +50,7 @@ from eidolon.engine import ConversationEngine
 from eidolon.live_config import LiveConfig
 from eidolon.own_keys import OwnKeys
 from eidolon.producer import ProducerProfile, effective_timezone
+from eidolon.push import PushEvent, PushHub
 from eidolon.randomness import Random
 from eidolon.reach_out_models import ReachOutModels
 from eidolon.store import (
@@ -162,6 +163,7 @@ class ReachOuts:
         config: LiveConfig,
         reach_out_models: ReachOutModels,
         own_keys: OwnKeys,
+        pushes: PushHub,
         affinities: Affinities,
         activity: ActivityLog,
         in_call: Callable[[str], bool],
@@ -175,6 +177,7 @@ class ReachOuts:
         self._config = config
         self._reach_out_models = reach_out_models
         self._own_keys = own_keys
+        self._pushes = pushes
         self._affinities = affinities
         self._activity = activity
         self._in_call = in_call
@@ -379,6 +382,16 @@ class ReachOuts:
             return
         await recording.finish("success")
         await self._store.reach_out_recorded_as(reach_out.id, recording.row_id)
+        character = self._characters[conversation.character_id]
+        self._pushes.publish(
+            PushEvent(
+                user_id=conversation.user_id,
+                character_id=conversation.character_id,
+                conversation_id=conversation.id,
+                title=character.name,
+                body="她给你发来一条消息",
+            )
+        )
 
 
 def _open(db: sqlite3.Connection) -> None:
