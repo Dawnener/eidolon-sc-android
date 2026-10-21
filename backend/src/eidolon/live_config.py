@@ -745,13 +745,6 @@ class _ReachOuts(_Item):
 
     name = REACH_OUTS
     fields = ("enabled", "per_day")
-    unavailable_reason = (
-        "这个部署没有配置对话模型（CHAT_LLM_*），搭话要用部署者的对话模型，已关闭；"
-        "要启用请先在 .env 里配置对话模型并重启"
-    )
-
-    def available(self) -> bool:
-        return self.c.settings.chat_llm is not None
 
     def env(self) -> Values:
         return {"enabled": self.c.settings.reach_outs, "per_day": DEFAULT_REACH_OUTS_PER_DAY}
@@ -1043,12 +1036,10 @@ class LiveConfig:
     @property
     def reach_outs(self) -> ReachOutSettings:
         """Whether characters reach out to users now, and how many times a day each user at
-        most. Off without a deployer chat model: reach-outs run on it, never on a user's."""
+        most. Each reach-out runs on the user's own model kept for them, or else on the
+        deployer's chat model; without either there is none for them."""
         values = self.effective(REACH_OUTS)
-        return ReachOutSettings(
-            bool(values["enabled"]) and self.settings.chat_llm is not None,
-            values["per_day"],
-        )
+        return ReachOutSettings(bool(values["enabled"]), values["per_day"])
 
     @property
     def proxy_settings(self) -> ProxySettings:

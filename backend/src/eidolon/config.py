@@ -470,8 +470,9 @@ class Settings:
     """Whether affinity and gifts are on (GLOSSARY.md「好感度」), as they are only with the
     judge model; on unless `.env` turns them off, and the admin console may override it."""
     reach_outs: bool = False
-    """Whether characters reach out to users (GLOSSARY.md「搭话」), on the deployer's chat
-    model; off unless `.env` turns it on, and the admin console may override it."""
+    """Whether characters reach out to users (GLOSSARY.md「搭话」), on the user's own model
+    kept for them or else the deployer's chat model; off unless `.env` turns it on, and the
+    admin console may override it."""
     proxy: ProxySettings = field(default_factory=ProxySettings)
     """Which of the deployer's services go through which proxy; none unless `.env` sets
     one, and the admin console may override it."""

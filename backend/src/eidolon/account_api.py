@@ -441,6 +441,32 @@ def add_account_routes(app: FastAPI, backend: Backend) -> None:
             await own_keys.check_llm(own)
         return {"base_url": own.text.base_url, "model": own.text.model}
 
+    reach_out_models = backend.reach_out_models
+
+    @app.get("/api/account/reach-out-llm")
+    def reach_out_llm(user_id: UserId) -> dict:
+        """The model kept for the user's reach-outs, without its key: its address, model,
+        protocol and the key's last 4 characters; `configured` false if none."""
+        described = reach_out_models.describe(user_id)
+        return {"configured": described is not None, **(described or {})}
+
+    @app.put("/api/account/reach-out-llm", status_code=204)
+    async def set_reach_out_llm(body: OwnLLMInput, user_id: UserId) -> None:
+        """Keep a model for the user's reach-outs, encrypted with the deployment's secret
+        key, after trying it as their own LLM is tried; 503 where the deployment has no
+        `EIDOLON_SECRET_KEY`."""
+        if not reach_out_models.configured:
+            raise HTTPException(503, "服务器没有设置 EIDOLON_SECRET_KEY，不能保存搭话模型")
+        own = body.settings()
+        with throttle.asking(user_id):
+            await own_keys.check_llm(ChatModelSettings(own))
+        reach_out_models.save(user_id, own)
+
+    @app.delete("/api/account/reach-out-llm", status_code=204)
+    def delete_reach_out_llm(user_id: UserId) -> None:
+        """Forget the user's reach-out model."""
+        reach_out_models.delete(user_id)
+
     @app.post("/api/account/keys/memory-llm/check")
     async def check_own_memory_llm(body: OwnLLMInput, user_id: UserId) -> dict:
         """Try the user's own model for memories at its effort before their browser keeps

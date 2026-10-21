@@ -624,6 +624,11 @@ class OwnKeys:
         own = _OwnLLM(self._llm_service, settings)
         return metered_llm(own, self._activity, llm_origin(service, settings, own_key=True))
 
+    def stored_chat_llm(self, settings: LLMSettings) -> ChatLLM:
+        """A chat model from settings kept on the server for the user's reach-outs, its
+        every request recorded as theirs: only reach-outs run on it."""
+        return self._own_llm("chat_llm", settings)
+
     def _require_speech_check(self) -> KeyCheck:
         if self._speech_check is None:
             raise OwnKeyRejected("这个部署没有语音服务")

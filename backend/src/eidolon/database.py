@@ -45,6 +45,7 @@ USER_DATA = [
     ("user_limits", "user_id = ?"),
     ("reach_outs_off", "user_id = ?"),
     ("data_package_imports", "user_id = ?"),
+    ("reach_out_models", "user_id = ?"),
     ("sessions", "user_id = ?"),
     ("sign_in_methods", "user_id = ?"),
     ("users", "id = ?"),

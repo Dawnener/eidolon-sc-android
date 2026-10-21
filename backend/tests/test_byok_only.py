@@ -110,7 +110,7 @@ async def test_service_status_probes_no_llms_without_a_deployer_chat_model(
     assert "memory_llm" not in found
 
 
-async def test_the_admin_configuration_reports_the_models_and_reach_outs_unavailable(
+async def test_the_admin_configuration_reports_the_models_unavailable_but_reach_outs_available(
     make_client: ClientFactory,
 ):
     client = make_client(FakeLLM(), deployer_llm=False)
@@ -120,7 +120,8 @@ async def test_the_admin_configuration_reports_the_models_and_reach_outs_unavail
 
     assert "unavailable" in described["chat_llm"]
     assert "unavailable" in described["memory_llm"]
-    assert "unavailable" in described["reach_outs"]
+    # Reach-outs may run on a model each user keeps for them, so they stay available.
+    assert "unavailable" not in described["reach_outs"]
     assert config.has_service("chat_llm") is False
     assert config.has_service("memory_llm") is False
     assert config.reach_outs.enabled is False

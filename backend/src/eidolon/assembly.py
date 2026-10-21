@@ -62,6 +62,7 @@ from eidolon.own_keys import LLMService, OwnImageService, OwnKeys, ProviderLLMSe
 from eidolon.photos import Photos
 from eidolon.proxy import ProxyRoutes
 from eidolon.reach_outs import ReachOuts
+from eidolon.reach_out_models import ReachOutModels
 from eidolon.readings import load_readings, readings_path
 from eidolon.rerank import (
     FALLBACK_MODEL,
@@ -141,6 +142,8 @@ class Backend:
     """Exports users' data packages, and imports them."""
     reach_outs: ReachOuts
     """Has characters reach out to users once their time comes."""
+    reach_out_models: ReachOutModels
+    """Users' own models for reach-outs, kept encrypted with the deployment's secret key."""
     world: World | None = None
     """The world setting; None without its data file."""
     corpus: StoryCorpus | None = None
@@ -229,6 +232,8 @@ def build(
     closers: list[Closer] = [database.close]
 
     store = Store(database)
+    reach_out_models = ReachOutModels(settings.database_path, settings.secret_key)
+    closers.append(reach_out_models.close)
     if identity_providers is None:
         identity_providers = open_identity_providers(settings.github, settings.google)
         closers.extend(p.aclose for p in identity_providers.values())
@@ -268,7 +273,8 @@ def build(
     )
     if settings.reach_outs and settings.chat_llm is None:
         log.warning(
-            "EIDOLON_REACH_OUTS is on but there is no deployer chat model; reach-outs are off"
+            "EIDOLON_REACH_OUTS is on with no deployer chat model; only users who set their "
+            "own reach-out model will be reached out to"
         )
     closers.append(config.aclose)
     if own_llm_service is None:  # users' own LLMs write down memories too
@@ -390,8 +396,8 @@ def build(
     engine.on_cooled(calls.cooled)
     engine.on_ended(calls.conversation_ended)
     reach_outs = ReachOuts(
-        database, store, engine, characters, config, affinities, activity,
-        calls.in_call, clock, random or secure_random,
+        database, store, engine, characters, config, reach_out_models, own_keys,
+        affinities, activity, calls.in_call, clock, random or secure_random,
     )
     config.on_change(gifts.notice)
     return Backend(
@@ -424,6 +430,7 @@ def build(
         service_status=service_status,
         data_packages=DataPackages(database, store, memories, characters, gift_catalog, clock),
         reach_outs=reach_outs,
+        reach_out_models=reach_out_models,
         world=world,
         corpus=corpus,
         _closers=closers,
