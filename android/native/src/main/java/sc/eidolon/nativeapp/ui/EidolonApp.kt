@@ -1,0 +1,111 @@
+package sc.eidolon.nativeapp.ui
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
+import sc.eidolon.nativeapp.AppContainer
+import sc.eidolon.nativeapp.session.SessionState
+import sc.eidolon.nativeapp.ui.auth.ConsentScreen
+import sc.eidolon.nativeapp.ui.auth.LoginScreen
+import sc.eidolon.nativeapp.ui.navigation.MainScaffold
+import sc.eidolon.nativeapp.ui.setup.ServerSetupScreen
+import androidx.compose.material3.Button
+
+@Composable
+fun EidolonApp(container: AppContainer) {
+    val state by container.session.state.collectAsStateWithLifecycle()
+    var serverSetup by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        when {
+            serverSetup -> ServerSetupScreen(container, onDone = { serverSetup = false })
+            state is SessionState.NoServer -> ServerSetupScreen(container, onDone = {})
+            state is SessionState.Loading -> LoadingView()
+            state is SessionState.SignedOut -> LoginScreen(container, onChangeServer = { serverSetup = true })
+            state is SessionState.NeedsConsent -> ConsentScreen(container)
+            state is SessionState.SignedIn -> MainScaffold(
+                container = container,
+                account = (state as SessionState.SignedIn).account,
+            )
+            state is SessionState.Banned -> MessageView(
+                title = "这位用户已被封禁",
+                message = (state as SessionState.Banned).message,
+                primary = "更换服务器" to { serverSetup = true },
+                secondary = "退出登录" to { scope.launch { container.session.logout() } },
+            )
+            state is SessionState.Unavailable -> MessageView(
+                title = "连不上服务器",
+                message = (state as SessionState.Unavailable).message,
+                primary = "重试" to { scope.launch { container.session.bootstrap() } },
+                secondary = "更换服务器" to { serverSetup = true },
+            )
+        }
+    }
+}
+
+@Composable
+private fun LoadingView() {
+    Column(
+        modifier = Modifier.fillMaxSize().systemBarsPadding(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        CircularProgressIndicator()
+        Text(
+            text = "正在载入…",
+            modifier = Modifier.padding(top = 16.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun MessageView(
+    title: String,
+    message: String,
+    primary: Pair<String, () -> Unit>,
+    secondary: Pair<String, () -> Unit>,
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().systemBarsPadding().padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineSmall,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            text = message,
+            modifier = Modifier.padding(top = 12.dp, bottom = 24.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Button(onClick = primary.second) { Text(primary.first) }
+        Button(onClick = secondary.second, modifier = Modifier.padding(top = 8.dp)) {
+            Text(secondary.first)
+        }
+    }
+}

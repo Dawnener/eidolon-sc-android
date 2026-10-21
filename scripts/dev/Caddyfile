@@ -1,0 +1,64 @@
+# 本地开发用的 Caddy：手机访问 http://<局域网 IP>:8080，反代到本机的 Next。
+#
+# 1. 后端开发模式只接受 http://localhost|127.0.0.1|::1 的 Origin（sessions.py），
+#    手机发来的 Origin 是 http://<局域网 IP>:8080，所以这里改写成 localhost。
+#    只改 Origin，Host 保持手机发来的值，Next 的跳转和 metadataBase 才对。
+# 2. /apk/ 是下载页，链接指向构建出来的调试包，避免手敲文件名。
+{
+	admin off
+	auto_https off
+}
+
+:8080 {
+	log {
+		output stdout
+		format console
+	}
+
+	@apkIndex path /apk /apk/
+	handle @apkIndex {
+		header Content-Type "text/html; charset=utf-8"
+		respond <<HTML
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eidolon APK</title>
+<body style="font: 16px system-ui; background:#11151e; color:#f2f4f8; padding:2rem;">
+<h1>Eidolon</h1>
+<p><a style="color:#7fb4ff" href="/apk/native/release/native-release.apk">下载原生 App（Release，推荐）</a></p>
+<p><a style="color:#7fb4ff" href="/apk/native/debug/native-debug.apk">下载原生 App（Debug）</a></p>
+<p><a style="color:#7fb4ff" href="/apk/app-debug.apk">下载网页壳（app-debug.apk）</a></p>
+<p>安装前需要在系统设置里允许这个浏览器安装未知应用。</p>
+</body>
+</html>
+HTML
+	}
+
+	# 只给真正的安装包加下载头；请求不存在的 .apk 时走普通 404，免得浏览器拿到空的附件
+	@apkApp path /apk/app-debug.apk
+	@apkNative path /apk/native/debug/native-debug.apk /apk/native/release/native-release.apk
+	header @apkApp Content-Type "application/vnd.android.package-archive"
+	header @apkApp Content-Disposition "attachment; filename=app-debug.apk"
+	header @apkNative Content-Type "application/vnd.android.package-archive"
+	header @apkNative Content-Disposition "attachment"
+
+	handle_path /apk/native/* {
+		root * {$EIDOLON_NATIVE_APK_DIR:/nonexistent}
+		file_server
+	}
+
+	handle_path /apk/* {
+		root * {$EIDOLON_APK_DIR:/nonexistent}
+		file_server
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3000 {
+			header_up Host {hostport}
+			header_up Origin "http://localhost:3000"
+			# 回合回复走 text/event-stream，不能缓冲
+			flush_interval -1
+		}
+	}
+}
