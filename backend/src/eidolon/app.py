@@ -294,6 +294,8 @@ def create_app(backend: Backend) -> FastAPI:
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await backend.start()
         yield
+        # End the push connections first, or uvicorn waits for them to close by themselves.
+        backend.pushes.close()
         await backend.aclose()
 
     app = FastAPI(title="Eidolon-SC", lifespan=lifespan)
@@ -418,6 +420,8 @@ def create_app(backend: Backend) -> FastAPI:
                     except TimeoutError:
                         yield ": ping\n\n"
                         continue
+                    if event is None:  # the hub is closing
+                        return
                     yield f"data: {json.dumps(event.shown(), ensure_ascii=False)}\n\n"
 
         return StreamingResponse(

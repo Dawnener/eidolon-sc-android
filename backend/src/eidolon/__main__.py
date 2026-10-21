@@ -85,6 +85,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from types import FrameType
 
 from eidolon.clock import utc_now
 from eidolon.config import (
@@ -199,14 +200,25 @@ def _serve() -> int:
             print(e, file=sys.stderr)
             return 1
     app = create_app(backend)
-    uvicorn.run(
-        app,
-        host=os.environ.get("HOST", "0.0.0.0"),
-        port=int(os.environ.get("PORT", "8000")),
-        log_config=server_logs.uvicorn_log_config(),
-        # Calls are no requests: they are hung up after, as the backend closes.
-        timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
-    )
+
+    class Server(uvicorn.Server):
+        """Ends the push connections as the signal comes, before uvicorn waits for them,
+        so a phone's long connection does not hold the shutdown open."""
+
+        def handle_exit(self, sig: int, frame: FrameType | None) -> None:
+            backend.pushes.close()
+            super().handle_exit(sig, frame)
+
+    Server(
+        uvicorn.Config(
+            app,
+            host=os.environ.get("HOST", "0.0.0.0"),
+            port=int(os.environ.get("PORT", "8000")),
+            log_config=server_logs.uvicorn_log_config(),
+            # Calls are no requests: they are hung up after, as the backend closes.
+            timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
+        )
+    ).run()
     return 0
 
 

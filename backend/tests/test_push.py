@@ -40,6 +40,21 @@ def test_a_connection_that_left_is_no_longer_given_events():
     assert queue.empty()
 
 
+def test_closing_the_hub_ends_every_open_connection_and_nothing_is_published_after():
+    hub = PushHub()
+
+    with hub.subscribe("producer") as one, hub.subscribe("someone") as other:
+        hub.close()
+        assert one.get_nowait() is None
+        assert other.get_nowait() is None
+        hub.publish(event())
+        assert one.empty()
+        assert other.empty()
+
+    with hub.subscribe("producer") as late:
+        assert late.get_nowait() is None
+
+
 async def test_a_reach_out_is_published_to_the_users_open_connection(
     make_client: ClientFactory, settings: Settings
 ):
@@ -58,6 +73,7 @@ async def test_a_reach_out_is_published_to_the_users_open_connection(
         await backend.reach_outs.run_due()
 
     pushed = queue.get_nowait()
+    assert pushed is not None
     assert pushed.character_id == "mano"
     assert pushed.conversation_id == conversation
     assert pushed.title == "櫻木真乃"
