@@ -38,6 +38,13 @@ asked for; the user's own key to it failed; or the photos of the hour were used 
 was about to be generated."""
 
 _SCHEMA = """
+-- This deployment's id, made once on first use (`Store.deployment_id`). Clients keep
+-- users' own API keys per deployment rather than per address, so moving the same
+-- deployment to another address or domain keeps them. One row only.
+CREATE TABLE IF NOT EXISTS deployment (
+    name TEXT PRIMARY KEY CHECK (name = 'deployment'),
+    id TEXT NOT NULL
+);
 -- `name` only tells users apart on the admin command line; it need not be unique.
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -519,6 +526,25 @@ class Store:
         self._taking_turns: Counter[str] = Counter()
         """How many text turns are under way in each conversation: counted on the event loop
         only, looked at anywhere (`is_taking_turn`)."""
+        self._deployment_id: str | None = None
+
+    def deployment_id(self) -> str:
+        """This deployment's id: made on first use and kept in the database, across
+        restarts and address changes, so clients can tell this deployment from another."""
+        if (made := self._deployment_id) is not None:
+            return made
+        with self._lock, self._db:
+            # One row only, so two processes first asking at once still settle on one id.
+            self._db.execute(
+                "INSERT OR IGNORE INTO deployment (name, id) VALUES ('deployment', ?)",
+                (uuid.uuid4().hex,),
+            )
+            row = self._db.execute(
+                "SELECT id FROM deployment WHERE name = 'deployment'"
+            ).fetchone()
+            made = str(row["id"])
+        self._deployment_id = made
+        return made
 
     async def create_user(self, name: str) -> User:
         user = User(uuid.uuid4().hex, name, _now())

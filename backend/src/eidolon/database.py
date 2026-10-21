@@ -79,6 +79,7 @@ for each deleted user, the same for all their rows, so that they still count as 
 
 NOT_USER_DATA = frozenset(
     {
+        "deployment",
         "episodes", "episode_cast", "episode_lines", "episode_passages",
         "story_corpus_version", "embedded_texts",
         "service_calls", "config_overrides", "price_overrides", "price_catalog",
@@ -88,15 +89,15 @@ NOT_USER_DATA = frozenset(
         "taken_rollups", "call_rollups", "spread_rollups", "achievements_launched",
     }
 )
-"""Every other table: the story corpus, the embedded text set, the calls to outside
-services, which say whose turn they were made in only through its activity record, the
-configuration and the prices the admin console overrides, the price catalogs fetched
-online, the ban list, hashes of the identities banned users since deleted signed in
-with, which say whose they were to no one, the announcements admins write, which say
-nothing of who wrote them, the sponsor code admins upload, when gifts last opened, which
-is no one's, and the reset cards admins have given every user, which say nothing of who
-gave them or to whom, the record of each backup run, which says nothing of anyone's, and
-when the achievements launched, which is no one's."""
+"""Every other table: this deployment's own id, made once and nobody's, the story corpus,
+the embedded text set, the calls to outside services, which say whose turn they were made
+in only through its activity record, the configuration and the prices the admin console
+overrides, the price catalogs fetched online, the ban list, hashes of the identities
+banned users since deleted signed in with, which say whose they were to no one, the
+announcements admins write, which say nothing of who wrote them, the sponsor code admins
+upload, when gifts last opened, which is no one's, the reset cards admins have given every
+user, which say nothing of who gave them or to whom, the record of each backup run, which
+says nothing of anyone's, and when the achievements launched, which is no one's."""
 
 
 HEALTH_READ_TIMEOUT = 2.0

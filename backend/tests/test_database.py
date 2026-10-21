@@ -6,6 +6,7 @@ from pathlib import Path
 
 from eidolon import database
 from eidolon.config import Settings
+from eidolon.store import Store
 from tests.conftest import ClientFactory
 from tests.fakes import FakeEmbedder, FakeJudge, FakeLLM, FakeReranker
 
@@ -31,6 +32,40 @@ def test_connecting_makes_the_directory_the_database_is_in(tmp_path: Path):
     database.connect(path).close()
 
     assert path.exists()
+
+
+def test_a_deployments_id_is_made_once_and_kept(tmp_path: Path):
+    path = tmp_path / "eidolon.db"
+    first = Store(path)
+    made = first.deployment_id()
+    first.close()
+
+    again = Store(path)
+    try:
+        assert again.deployment_id() == made
+    finally:
+        again.close()
+    assert made
+
+
+def test_two_deployments_have_different_ids(tmp_path: Path):
+    one = Store(tmp_path / "one.db")
+    two = Store(tmp_path / "two.db")
+    try:
+        assert one.deployment_id() != two.deployment_id()
+    finally:
+        one.close()
+        two.close()
+
+
+async def test_health_reports_the_deployments_stable_id(make_client: ClientFactory):
+    client = make_client(FakeLLM(), user=None)
+    first = (await client.get("/api/health")).json()
+    second = (await client.get("/api/health")).json()
+
+    assert first["ok"] is True
+    assert first["deployment_id"]
+    assert first["deployment_id"] == second["deployment_id"]
 
 
 async def test_every_table_is_either_a_users_data_or_not(

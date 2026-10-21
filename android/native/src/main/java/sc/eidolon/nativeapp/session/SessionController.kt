@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import sc.eidolon.nativeapp.data.api.ApiError
 import sc.eidolon.nativeapp.data.api.EidolonApi
+import sc.eidolon.nativeapp.data.api.HealthDto
 import sc.eidolon.nativeapp.data.local.CookieStore
 import sc.eidolon.nativeapp.data.local.OwnKeysStore
 import sc.eidolon.nativeapp.data.local.PreferencesStore
@@ -46,18 +47,22 @@ class SessionController(
     val account: Account?
         get() = (state.value as? SessionState.SignedIn)?.account
 
-    suspend fun bootstrap() {
+    suspend fun bootstrap(knownHealth: HealthDto? = null) {
         val saved = serverStore.current()
         if (saved == null) {
             serverState.url = null
+            serverState.deploymentId = null
             serverUrl = null
             _state.value = SessionState.NoServer
             return
         }
         serverUrl = saved
         serverState.url = saved
+        serverState.deploymentId = knownHealth?.deploymentId
         _state.value = SessionState.Loading
         try {
+            // 自带密钥按部署 ID 存；旧后端不返回时退回按地址存。
+            serverState.deploymentId = (knownHealth ?: api.health()).deploymentId
             val account = api.account()
             prefs.setUser(account.id, account.name)
             _state.value = SessionState.SignedIn(account)
@@ -102,20 +107,24 @@ class SessionController(
         val normalized = ServerUrl.normalize(input)
             ?: return Result.failure(IllegalArgumentException("地址要以 http:// 或 https:// 开头"))
         val previous = serverState.url
+        val previousDeployment = serverState.deploymentId
         serverState.url = normalized
+        serverState.deploymentId = null
         return try {
             // 只探测 /api/health；登录方式等登录页自己会取，少一个可能失败的步骤
-            api.health()
+            val health = api.health()
             serverStore.save(normalized)
             serverUrl = normalized
             cookieStore.clear()
-            bootstrap()
+            bootstrap(health)
             Result.success(normalized)
         } catch (error: kotlinx.coroutines.CancellationException) {
             serverState.url = previous
+            serverState.deploymentId = previousDeployment
             throw error
         } catch (error: Exception) {
             serverState.url = previous
+            serverState.deploymentId = previousDeployment
             Result.failure(error)
         }
     }

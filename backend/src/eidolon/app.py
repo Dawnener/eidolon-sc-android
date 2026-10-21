@@ -389,14 +389,18 @@ def create_app(backend: Backend) -> FastAPI:
     @app.get("/api/health")
     async def health() -> JSONResponse:
         """Whether the backend can serve: 503 when it cannot read the database in time,
-        on a thread, as those it serves are."""
+        on a thread, as those it serves are; and this deployment's id, which clients use to
+        keep users' own keys with the deployment rather than with its address."""
         try:
             ok = await asyncio.wait_for(
                 asyncio.to_thread(readable, backend.settings.database_path), HEALTH_TIMEOUT
             )
         except TimeoutError:
             ok = False
-        return JSONResponse({"ok": ok}, status_code=200 if ok else 503)
+        body = {"ok": ok}
+        if ok:
+            body["deployment_id"] = store.deployment_id()
+        return JSONResponse(body, status_code=200 if ok else 503)
 
     add_account_routes(app, backend)
     add_admin_routes(app, backend)

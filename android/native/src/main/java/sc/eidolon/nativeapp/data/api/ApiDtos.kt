@@ -28,7 +28,10 @@ data class AuthProvidersDto(
 )
 
 @Serializable
-data class HealthDto(val ok: Boolean = false)
+data class HealthDto(
+    val ok: Boolean = false,
+    @SerialName("deployment_id") val deploymentId: String? = null,
+)
 
 @Serializable
 data class ExemptionDto(val turns: Boolean = false, val calls: Boolean = false)
