@@ -32,6 +32,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.launch
 import sc.eidolon.nativeapp.AppContainer
+import sc.eidolon.nativeapp.ui.onboarding.OnboardingPage
 import sc.eidolon.nativeapp.session.SessionController
 
 class ConsentViewModel(private val session: SessionController) : ViewModel() {
@@ -63,47 +64,45 @@ fun ConsentScreen(container: AppContainer) {
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$base$path"))) }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .systemBarsPadding()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+    OnboardingPage(
+        title = "使用前请确认",
+        subtitle = "第一次使用需要同意隐私政策和使用条款，并确认年满 13 岁。",
     ) {
-        Text("使用前请确认", style = MaterialTheme.typography.headlineSmall)
-        Text(
-            "第一次使用需要同意隐私政策和使用条款，并确认年满 13 岁。",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = vm.agree, onCheckedChange = { vm.agree = it })
-            Text(
-                "我已阅读并同意隐私政策和使用条款",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = vm.atLeast13, onCheckedChange = { vm.atLeast13 = it })
-            Text("我已年满 13 岁", style = MaterialTheme.typography.bodyMedium)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = { open("/privacy") }) { Text("隐私政策") }
-            TextButton(onClick = { open("/terms") }) { Text("使用条款") }
-        }
-        vm.error?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-        }
-        Button(
-            onClick = { vm.submit() },
-            enabled = !vm.busy && vm.agree && vm.atLeast13,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            if (vm.busy) CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
-            Text(if (vm.busy) "正在提交…" else "同意并开始")
-        }
-        TextButton(onClick = { scope.launch { container.session.logout() } }) {
-            Text("退出登录")
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = vm.agree, onCheckedChange = { vm.agree = it })
+                Text(
+                    "我已阅读并同意隐私政策和使用条款",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = vm.atLeast13, onCheckedChange = { vm.atLeast13 = it })
+                Text("我已年满 13 岁", style = MaterialTheme.typography.bodyMedium)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { open("/privacy") }) { Text("隐私政策") }
+                TextButton(onClick = { open("/terms") }) { Text("使用条款") }
+            }
+            vm.error?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+            Button(
+                onClick = { vm.submit() },
+                enabled = !vm.busy && vm.agree && vm.atLeast13,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (vm.busy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.padding(end = 8.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
+                Text(if (vm.busy) "正在提交…" else "同意并开始")
+            }
+            TextButton(onClick = { scope.launch { container.session.logout() } }) {
+                Text("退出登录")
+            }
         }
     }
 }

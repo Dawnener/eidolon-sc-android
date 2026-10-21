@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,6 +27,7 @@ import sc.eidolon.nativeapp.session.SessionState
 import sc.eidolon.nativeapp.ui.auth.ConsentScreen
 import sc.eidolon.nativeapp.ui.auth.LoginScreen
 import sc.eidolon.nativeapp.ui.navigation.MainScaffold
+import sc.eidolon.nativeapp.ui.onboarding.WelcomeScreen
 import sc.eidolon.nativeapp.ui.setup.ServerSetupScreen
 import androidx.compose.material3.Button
 
@@ -33,11 +35,15 @@ import androidx.compose.material3.Button
 fun EidolonApp(container: AppContainer) {
     val state by container.session.state.collectAsStateWithLifecycle()
     var serverSetup by remember { mutableStateOf(false) }
+    var welcomeDone by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         when {
             serverSetup -> ServerSetupScreen(container, onDone = { serverSetup = false })
+            state is SessionState.NoServer && !welcomeDone -> WelcomeScreen(
+                onStart = { welcomeDone = true },
+            )
             state is SessionState.NoServer -> ServerSetupScreen(container, onDone = {})
             state is SessionState.Loading -> LoadingView()
             state is SessionState.SignedOut -> LoginScreen(container, onChangeServer = { serverSetup = true })

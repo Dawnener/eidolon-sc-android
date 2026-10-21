@@ -29,6 +29,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.launch
 import sc.eidolon.nativeapp.AppContainer
+import sc.eidolon.nativeapp.ui.onboarding.OnboardingPage
 import sc.eidolon.nativeapp.data.api.AuthProvidersDto
 import sc.eidolon.nativeapp.data.api.EidolonApi
 import sc.eidolon.nativeapp.session.SessionController
@@ -71,56 +72,54 @@ fun LoginScreen(container: AppContainer, onChangeServer: () -> Unit) {
             initializer { LoginViewModel(container.session, container.api) }
         },
     )
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .systemBarsPadding()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+    OnboardingPage(
+        title = "登录",
+        subtitle = "和 283 事务所的偶像说说话。",
     ) {
-        Text("登录", style = MaterialTheme.typography.headlineSmall)
-        Text(
-            "和 283 事务所的偶像说说话。",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            "服务器：${container.session.serverUrl.orEmpty()}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        when {
-            vm.loading -> CircularProgressIndicator()
-            vm.providers?.devLogin == true -> {
-                OutlinedTextField(
-                    value = vm.name,
-                    onValueChange = { vm.name = it },
-                    label = { Text("用户名") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { vm.signIn() }),
-                )
-                Button(
-                    onClick = { vm.signIn() },
-                    enabled = !vm.busy && vm.name.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    if (vm.busy) CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
-                    Text(if (vm.busy) "正在登录…" else "登录")
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(
+                "服务器：${container.session.serverUrl.orEmpty()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            when {
+                vm.loading -> CircularProgressIndicator()
+                vm.providers?.devLogin == true -> {
+                    OutlinedTextField(
+                        value = vm.name,
+                        onValueChange = { vm.name = it },
+                        label = { Text("用户名") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { vm.signIn() }),
+                    )
+                    Button(
+                        onClick = { vm.signIn() },
+                        enabled = !vm.busy && vm.name.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        if (vm.busy) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.padding(end = 8.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        }
+                        Text(if (vm.busy) "正在登录…" else "登录")
+                    }
+                }
+                vm.providers != null -> {
+                    Text(
+                        "这个部署没有开启开发登录。此版本暂不支持 GitHub/Google 登录。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
-            vm.providers != null -> {
-                Text(
-                    "这个部署没有开启开发登录。此版本暂不支持 GitHub/Google 登录。",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            vm.error?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
+            TextButton(onClick = onChangeServer) { Text("更换服务器") }
         }
-        vm.error?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-        }
-        TextButton(onClick = onChangeServer) { Text("更换服务器") }
     }
 }

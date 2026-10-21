@@ -32,6 +32,7 @@ import kotlinx.coroutines.launch
 import sc.eidolon.nativeapp.AppContainer
 import sc.eidolon.nativeapp.BuildConfig
 import sc.eidolon.nativeapp.session.SessionController
+import sc.eidolon.nativeapp.ui.onboarding.OnboardingPage
 
 class ServerSetupViewModel(private val session: SessionController) : ViewModel() {
     var url by mutableStateOf(BuildConfig.DEFAULT_SERVER_URL)
@@ -81,6 +82,15 @@ fun ServerSetupScreen(
     } else {
         Modifier.fillMaxSize()
     }
+    if (applySystemBarsPadding) {
+        OnboardingPage(
+            title = "连接服务器",
+            subtitle = "Eidolon 不依赖官方服务器。填你或朋友部署的 Eidolon-SC 地址；原生 App 直接调用 /api，不加载网页。",
+        ) {
+            ServerFields(vm)
+        }
+        return
+    }
     Column(
         modifier = outer
             .padding(24.dp),
@@ -92,6 +102,13 @@ fun ServerSetupScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        ServerFields(vm)
+    }
+}
+
+@Composable
+private fun ServerFields(vm: ServerSetupViewModel) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         OutlinedTextField(
             value = vm.url,
             onValueChange = { vm.url = it },
@@ -112,7 +129,10 @@ fun ServerSetupScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             if (vm.busy) {
-                CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
+                CircularProgressIndicator(
+                    modifier = Modifier.padding(end = 8.dp),
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
             }
             Text(if (vm.busy) "正在连接…" else "连接")
         }
