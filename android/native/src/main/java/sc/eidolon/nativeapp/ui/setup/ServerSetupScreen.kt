@@ -96,7 +96,7 @@ fun ServerSetupScreen(
             value = vm.url,
             onValueChange = { vm.url = it },
             label = { Text("服务器地址") },
-            placeholder = { Text("http://192.168.114.40:8080") },
+            placeholder = { Text("http://192.0.2.10:8080") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),

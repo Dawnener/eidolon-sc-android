@@ -12,19 +12,19 @@ class DeploymentIdentityTest {
     @Test
     fun ownKeysFollowTheDeploymentAcrossAddresses() {
         val state = ServerState()
-        state.url = "http://192.168.114.40:8080"
+        state.url = "http://192.0.2.10:8080"
         state.deploymentId = "deployment-a"
         assertEquals("deployment-a", state.keyNamespace)
 
-        state.url = "http://192.168.1.5:8080"
+        state.url = "http://198.51.100.20:8080"
         assertEquals("deployment-a", state.keyNamespace)
     }
 
     @Test
     fun anOlderServerWithoutAnIdKeepsKeysPerAddress() {
         val state = ServerState()
-        state.url = "http://192.168.1.5:8080"
-        assertEquals("192.168.1.5:8080", state.keyNamespace)
+        state.url = "http://198.51.100.20:8080"
+        assertEquals("198.51.100.20:8080", state.keyNamespace)
     }
 
     @Test

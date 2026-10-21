@@ -11,7 +11,7 @@ class RequestHeadersTest {
     fun httpDevOriginIsLocalhost() {
         assertEquals(
             "http://localhost:3000",
-            RequestHeaders.originFor("http://192.168.114.40:8080"),
+            RequestHeaders.originFor("http://192.0.2.10:8080"),
         )
     }
 

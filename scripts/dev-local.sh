@@ -23,7 +23,7 @@ LAN_IP="${EIDOLON_LAN_IP:-}"
 if [ -z "$LAN_IP" ]; then
   LAN_IP="$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
 fi
-LAN_IP="${LAN_IP:-192.168.114.40}"
+LAN_IP="${LAN_IP:-127.0.0.1}"
 
 die() {
   echo "$*" >&2

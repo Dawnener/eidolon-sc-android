@@ -15,8 +15,8 @@ android {
         targetSdk 34
         versionCode 1
         versionName '0.1.0'
-        // 本地联调默认走 Caddy；云端部署后在设置里改成 https://你的域名
-        buildConfigField "String", "DEFAULT_SERVER_URL", '"http://192.168.114.40:8080"'
+        // 首次启动由用户填写服务器地址；这里不写死任何局域网地址。
+        buildConfigField "String", "DEFAULT_SERVER_URL", '""'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
