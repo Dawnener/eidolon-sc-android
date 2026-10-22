@@ -1,6 +1,7 @@
 package sc.eidolon.nativeapp.session
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,8 +64,10 @@ class SessionController(
         _state.value = SessionState.Loading
         try {
             // 自带密钥按部署 ID 存；旧后端不返回时退回按地址存。
-            serverState.deploymentId = (knownHealth ?: api.health()).deploymentId
-            val account = api.account()
+            serverState.deploymentId = withRetry {
+                (knownHealth ?: api.health()).deploymentId
+            }
+            val account = withRetry { api.account() }
             prefs.setUser(account.id, account.name)
             _state.value = SessionState.SignedIn(account)
         } catch (error: ApiError) {
@@ -83,9 +86,34 @@ class SessionController(
                 )
                 else -> _state.value = SessionState.Unavailable(error.message)
             }
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             _state.value = SessionState.Unavailable(error.message ?: "连不上服务器")
         }
+    }
+
+    /**
+     * 冷启动时网络可能还没就绪（或刚切换网络），第一次请求会直接失败，
+     * 手动点重试又能成功。首屏探测自动重试两次，只有确定连不上才报错。
+     */
+    private suspend fun <T> withRetry(block: suspend () -> T): T {
+        var last: Exception? = null
+        repeat(3) { attempt ->
+            try {
+                return block()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: ApiError) {
+                // 4xx 是服务器给出的明确答复，重试没有意义。
+                if (error.status < 500) throw error
+                last = error
+            } catch (error: Exception) {
+                last = error
+            }
+            if (attempt < 2) delay(if (attempt == 0) 500 else 1200)
+        }
+        throw last ?: IllegalStateException("连不上服务器")
     }
 
     /** 网络层任何 401/428/403 都回到对应的登录态；403 的 Origin 配置错误不强制退出。 */
@@ -109,14 +137,16 @@ class SessionController(
             ?: return Result.failure(IllegalArgumentException("地址要以 http:// 或 https:// 开头"))
         val previous = serverState.url
         val previousDeployment = serverState.deploymentId
+        val changed = normalized != (serverUrl ?: previous)
         serverState.url = normalized
-        serverState.deploymentId = null
+        if (changed) serverState.deploymentId = null
         return try {
             // 只探测 /api/health；登录方式等登录页自己会取，少一个可能失败的步骤
-            val health = api.health()
+            val health = withRetry { api.health() }
             serverStore.save(normalized)
             serverUrl = normalized
-            cookieStore.clear()
+            // 重新连接同一个服务器时保留 session；只有换地址才清掉旧站点的 cookie。
+            if (changed) cookieStore.clear()
             bootstrap(health)
             Result.success(normalized)
         } catch (error: kotlinx.coroutines.CancellationException) {

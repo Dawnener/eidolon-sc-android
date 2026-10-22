@@ -72,7 +72,7 @@ class EidolonApi(
 
     suspend fun providers(): AuthProvidersDto = getJson("/api/auth/providers")
 
-    suspend fun health(): HealthDto = getJson("/api/health")
+    suspend fun health(): HealthDto = getJson("/api/health", client = http.probe)
 
     suspend fun devLogin(name: String) {
         postNoContent(
@@ -93,7 +93,8 @@ class EidolonApi(
         postNoContent("/api/auth/logout")
     }
 
-    suspend fun account(): Account = getJson<AccountDto>("/api/account").toDomain()
+    suspend fun account(): Account =
+        getJson<AccountDto>("/api/account", client = http.probe).toDomain()
 
     suspend fun setReachOuts(on: Boolean) {
         putNoContent(
@@ -404,10 +405,14 @@ class EidolonApi(
             )
         }
 
-    private suspend fun getRaw(path: String, query: Map<String, String> = emptyMap()): String =
+    private suspend fun getRaw(
+        path: String,
+        query: Map<String, String> = emptyMap(),
+        client: OkHttpClient = http.api,
+    ): String =
         // 响应体必须在 IO 线程读；enqueue 只负责把请求发出去，恢复后是在调用方的主线程上
         withContext(Dispatchers.IO) {
-            val response = execute(http.api, Request.Builder().url(url(path, query)).get().build())
+            val response = execute(client, Request.Builder().url(url(path, query)).get().build())
             response.use {
                 val body = it.body?.string().orEmpty()
                 if (!it.isSuccessful) throw ApiError.from(it.code, body, it.header("Retry-After"))
@@ -418,7 +423,8 @@ class EidolonApi(
     private suspend inline fun <reified T> getJson(
         path: String,
         query: Map<String, String> = emptyMap(),
-    ): T = json.decodeFromString<T>(getRaw(path, query))
+        client: OkHttpClient = http.api,
+    ): T = json.decodeFromString<T>(getRaw(path, query, client))
 
     private suspend inline fun <reified T> getJsonOrNull(path: String): T? {
         val raw = getRaw(path)

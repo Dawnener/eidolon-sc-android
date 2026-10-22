@@ -5,6 +5,7 @@ import android.net.Uri
 object Routes {
     const val Conversations = "conversations"
     const val Chat = "chat/{characterId}"
+    const val Call = "call/{characterId}"
     const val Gifts = "gifts"
     const val GiftsPattern = "gifts?to={to}"
     const val Settings = "settings"
@@ -17,6 +18,8 @@ object Routes {
     const val Server = "settings/server"
 
     fun chat(characterId: String) = "chat/${Uri.encode(characterId)}"
+
+    fun call(characterId: String) = "call/${Uri.encode(characterId)}"
 
     fun gifts(characterId: String? = null) =
         if (characterId == null) Gifts else "gifts?to=${Uri.encode(characterId)}"

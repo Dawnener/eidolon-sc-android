@@ -47,6 +47,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import sc.eidolon.nativeapp.AppContainer
 import sc.eidolon.nativeapp.model.Account
+import sc.eidolon.nativeapp.ui.call.CallScreen
 import sc.eidolon.nativeapp.ui.chat.ChatScreen
 import sc.eidolon.nativeapp.ui.conversations.ConversationListScreen
 import sc.eidolon.nativeapp.ui.datapackage.DataPackageScreen
@@ -232,6 +233,20 @@ fun MainScaffold(container: AppContainer, account: Account) {
                         onBack = { nav.popBackStack() },
                         onOpenSettings = { nav.navigate(Routes.OwnKeys) },
                         onOpenGifts = { id -> nav.navigate(Routes.gifts(id)) },
+                        onOpenCall = { id -> nav.navigate(Routes.call(id)) },
+                    )
+                }
+                composable(
+                    route = Routes.Call,
+                    enterTransition = { fadeIn(tween(SHEET_MS)) },
+                    exitTransition = { fadeOut(tween(SHEET_MS)) },
+                    popEnterTransition = { fadeIn(tween(SHEET_MS)) },
+                    popExitTransition = { fadeOut(tween(SHEET_MS)) },
+                ) { entry ->
+                    CallScreen(
+                        container = container,
+                        characterId = entry.arguments?.getString("characterId").orEmpty(),
+                        onEnd = { nav.popBackStack() },
                     )
                 }
                 composable(

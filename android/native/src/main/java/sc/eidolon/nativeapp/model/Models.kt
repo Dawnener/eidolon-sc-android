@@ -15,6 +15,9 @@ data class Character(
     val unitReading: String? = null,
     val unitOrder: Int? = null,
     val idolId: Int? = null,
+    val backgroundUrl: String? = null,
+    val callOpenerJa: String? = null,
+    val callOpenerZh: String? = null,
 )
 
 data class Segment(val ja: String, val zh: String)

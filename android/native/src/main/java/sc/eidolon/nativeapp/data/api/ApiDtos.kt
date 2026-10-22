@@ -144,6 +144,8 @@ data class CharacterDto(
     val intro: String = "",
     val color: String,
     @SerialName("avatar_url") val avatarUrl: String? = null,
+    @SerialName("background_url") val backgroundUrl: String? = null,
+    @SerialName("call_opener") val callOpener: ScriptedLineDto? = null,
     @SerialName("name_zh") val nameZh: String? = null,
     @SerialName("name_kana") val nameKana: String? = null,
     @SerialName("name_romaji") val nameRomaji: String? = null,
@@ -151,6 +153,12 @@ data class CharacterDto(
     @SerialName("unit_reading") val unitReading: String? = null,
     @SerialName("unit_order") val unitOrder: Int? = null,
     @SerialName("idol_id") val idolId: Int? = null,
+)
+
+@Serializable
+data class ScriptedLineDto(
+    val ja: String,
+    val subtitle: String? = null,
 )
 
 @Serializable
@@ -296,6 +304,9 @@ fun CharacterDto.toDomain(): Character = Character(
     unitReading = unitReading,
     unitOrder = unitOrder,
     idolId = idolId,
+    backgroundUrl = backgroundUrl,
+    callOpenerJa = callOpener?.ja,
+    callOpenerZh = callOpener?.subtitle,
 )
 
 fun AffinityDto.toDomain(): AffinityChange = AffinityChange(

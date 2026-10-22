@@ -95,6 +95,19 @@ class HttpFactory(
 
     val api: OkHttpClient = client(readTimeoutSeconds = 30, callTimeoutSeconds = 45)
 
+    /** 启动探测：首屏不能卡在普通请求的 45 秒超时上。 */
+    val probe: OkHttpClient = OkHttpClient.Builder()
+        .cookieJar(cookieJar)
+        .addInterceptor(authInterceptor)
+        .addInterceptor(headerInterceptor)
+        .addInterceptor(errorInterceptor)
+        .followRedirects(false)
+        .retryOnConnectionFailure(true)
+        .connectTimeout(4, TimeUnit.SECONDS)
+        .readTimeout(6, TimeUnit.SECONDS)
+        .callTimeout(8, TimeUnit.SECONDS)
+        .build()
+
     /** 自带密钥的试调/列模型可能很慢。 */
     val check: OkHttpClient = client(readTimeoutSeconds = 120, callTimeoutSeconds = 180)
 

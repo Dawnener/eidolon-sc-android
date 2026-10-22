@@ -37,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.CardGiftcard
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.History
@@ -132,6 +133,7 @@ fun ChatScreen(
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenGifts: (String) -> Unit,
+    onOpenCall: (String) -> Unit,
 ) {
     val vm: ChatViewModel = viewModel(
         key = characterId,
@@ -159,6 +161,7 @@ fun ChatScreen(
     }
     val zone = remember { Time.zone() }
     val cooling = state.coolingUntil?.isAfter(now) == true
+    val actionsReady = !state.loading && state.openError == null
     var showHistory by remember { mutableStateOf(false) }
     var showAchievements by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -252,40 +255,46 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    if (viewing == null && state.affinity != null) {
-                        IconButton(onClick = { onOpenGifts(characterId) }) {
-                            Icon(Icons.Outlined.CardGiftcard, contentDescription = "送她礼物")
+                    if (actionsReady) {
+                        if (viewing == null && !state.ended && !cooling && state.character != null) {
+                            IconButton(onClick = { onOpenCall(characterId) }) {
+                                Icon(Icons.Outlined.Call, contentDescription = "语音通话")
+                            }
                         }
-                    }
-                    Box {
-                        IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Outlined.MoreVert, contentDescription = "更多")
+                        if (viewing == null && state.affinity != null) {
+                            IconButton(onClick = { onOpenGifts(characterId) }) {
+                                Icon(Icons.Outlined.CardGiftcard, contentDescription = "送她礼物")
+                            }
                         }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            DropdownMenuItem(
-                                text = { Text("新对话") },
-                                enabled = !state.busy &&
-                                    state.log.entries.isNotEmpty() &&
-                                    !state.loading,
-                                onClick = {
-                                    menuOpen = false
-                                    showHistory = false
-                                    if (viewing != null) vm.backToCurrent()
-                                    vm.newConversation()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("历史对话") },
-                                onClick = {
-                                    menuOpen = false
-                                    vm.loadHistory()
-                                    showHistory = true
-                                },
-                            )
-                            if (state.affinity != null) {
+                        Box {
+                            IconButton(onClick = { menuOpen = true }) {
+                                Icon(Icons.Outlined.MoreVert, contentDescription = "更多")
+                            }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                                 DropdownMenuItem(
-                                    text = { Text("成就") },
+                                    text = { Text("新对话") },
+                                    enabled = !state.busy &&
+                                        state.log.entries.isNotEmpty() &&
+                                        !state.loading,
                                     onClick = {
+                                        menuOpen = false
+                                        showHistory = false
+                                        if (viewing != null) vm.backToCurrent()
+                                        vm.newConversation()
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("历史对话") },
+                                    onClick = {
+                                        menuOpen = false
+                                        vm.loadHistory()
+                                        showHistory = true
+                                    },
+                                )
+                                if (state.affinity != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("成就") },
+                                        onClick = {
                                         menuOpen = false
                                         vm.loadHerAchievements()
                                         showAchievements = true
@@ -294,6 +303,7 @@ fun ChatScreen(
                             }
                         }
                     }
+                }
                 },
             )
         },

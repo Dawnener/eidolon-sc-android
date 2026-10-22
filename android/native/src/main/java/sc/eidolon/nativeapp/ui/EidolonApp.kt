@@ -91,14 +91,33 @@ fun EidolonApp(container: AppContainer) {
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         when {
-            serverSetup -> ServerSetupScreen(container, onDone = { serverSetup = false })
+            serverSetup -> ServerSetupScreen(
+                container,
+                onDone = {
+                    serverSetup = false
+                    // 手动重连成功后走登录页，而不是又回到欢迎页的 GitHub 授权入口。
+                    welcomeDone = true
+                },
+            )
             authenticating -> LoadingView()
             (state is SessionState.NoServer || state is SessionState.SignedOut) && !welcomeDone ->
                 WelcomeScreen(onStart = ::start, startLabel = "使用 GitHub 登录")
             state is SessionState.NoServer ->
-                LoginScreen(container, onChangeServer = { serverSetup = true })
+                LoginScreen(
+                    container,
+                    onChangeServer = {
+                        welcomeDone = true
+                        serverSetup = true
+                    },
+                )
             state is SessionState.Loading -> LoadingView()
-            state is SessionState.SignedOut -> LoginScreen(container, onChangeServer = { serverSetup = true })
+            state is SessionState.SignedOut -> LoginScreen(
+                container,
+                onChangeServer = {
+                    welcomeDone = true
+                    serverSetup = true
+                },
+            )
             state is SessionState.NeedsConsent -> ConsentScreen(container)
             state is SessionState.SignedIn -> MainScaffold(
                 container = container,
@@ -107,14 +126,23 @@ fun EidolonApp(container: AppContainer) {
             state is SessionState.Banned -> MessageView(
                 title = "这位用户已被封禁",
                 message = (state as SessionState.Banned).message,
-                primary = "更换服务器" to { serverSetup = true },
+                primary = "更换服务器" to {
+                    welcomeDone = true
+                    serverSetup = true
+                },
                 secondary = "退出登录" to { scope.launch { container.session.logout() } },
             )
             state is SessionState.Unavailable -> MessageView(
                 title = "连不上服务器",
                 message = (state as SessionState.Unavailable).message,
-                primary = "重试" to { scope.launch { container.session.bootstrap() } },
-                secondary = "更换服务器" to { serverSetup = true },
+                primary = "重试" to {
+                    welcomeDone = true
+                    scope.launch { container.session.bootstrap() }
+                },
+                secondary = "更换服务器" to {
+                    welcomeDone = true
+                    serverSetup = true
+                },
             )
         }
     }
