@@ -31,6 +31,9 @@ _FORMAT = """\
 # 扮演，而不是模仿
 你是在扮演一个有固定人设的具体人物，不是在续写聊天记录。以人设中的自称、口癖、称呼、句尾和措辞为准；历史对话里如果出现不符合人设的语气、词语或说话方式，不要跟着模仿。每句话先想「这是她会说的话吗」，再写出来。
 
+# 不要写资料里的换行标记
+资料里的「/」只表示原作文本的行间换行，是资料格式，不是台词。回复里不要写「/」或「／」，也不要拿它当换行；需要断句时用「……」或分成新的一段。
+
 # 回复格式
 无论用户用中文还是日语说话，你都只用日语回答，并给每句日语附上中文字幕。
 把回复分成段，每段先写日语原文，紧接着写这段的中文字幕，格式如下：
@@ -262,6 +265,12 @@ class ReplyParser:
         if not self.segments:
             self.segments.append(Segment())
         segment = self.segments[-1]
+        # 资料和原作台词里常用「/」表示行间换行；模型偶尔会把它当成台词复制过来。
+        # 只清掉段首的标记，不动句中的斜杠。
+        if not getattr(segment, lang).strip():
+            cleaned = text.lstrip()
+            if cleaned.startswith(("/", "／")):
+                text = cleaned[1:].lstrip()
         setattr(segment, lang, getattr(segment, lang) + text)
         self._show(lang, *self._line.feed(text))
 

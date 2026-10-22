@@ -51,6 +51,22 @@ def test_cues_written_any_other_way_are_neither_voiced_nor_shown():
     assert parser.complete[0].ja.startswith("(happy)")  # the record keeps what was written
 
 
+def test_a_leading_slash_copied_from_the_source_is_left_out():
+    shown, _, parser = parse("<ja>/こんにちは</ja><zh>／你好</zh>")
+
+    assert joined(shown) == "こんにちは"
+    assert joined(shown, "zh") == "你好"
+    assert parser.complete[0].ja == "こんにちは"
+    assert parser.complete[0].zh == "你好"
+
+
+def test_a_slash_inside_a_sentence_is_kept():
+    shown, _, _ = parse("<ja>はい/いいえ</ja><zh>是/不是</zh>")
+
+    assert joined(shown) == "はい/いいえ"
+    assert joined(shown, "zh") == "是/不是"
+
+
 def test_a_cue_split_between_chunks_never_shows_a_piece_of_itself():
     shown, voiced, _ = parse("<ja>ほわっ、[sh", "y", "ly] えへ", "へ</ja>")
 
