@@ -93,6 +93,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filterNotNull
 import sc.eidolon.nativeapp.AppContainer
 import sc.eidolon.nativeapp.core.Time
 import sc.eidolon.nativeapp.model.ChatLine
@@ -169,10 +170,11 @@ fun ChatScreen(
         vm.refreshOnResume()
         onPauseOrDispose { }
     }
-    LaunchedEffect(state.rewardNotice) {
-        val notice = state.rewardNotice ?: return@LaunchedEffect
-        snackbar.showSnackbar(notice)
-        vm.dismissRewardNotice()
+    LaunchedEffect(Unit) {
+        snapshotFlow { vm.state.rewardNotice }.filterNotNull().collect { notice ->
+            vm.dismissRewardNotice()
+            snackbar.showSnackbar(notice)
+        }
     }
     LaunchedEffect(state.affinityCue?.id) {
         if (state.affinityCue == null) return@LaunchedEffect

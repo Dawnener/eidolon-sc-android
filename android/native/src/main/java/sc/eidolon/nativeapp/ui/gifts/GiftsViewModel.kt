@@ -238,11 +238,7 @@ class GiftsViewModel(
                     giftState = state.giftState?.let {
                         GiftUpdates.afterGiving(it, characterId, giftId, given)
                     },
-                    pickedCharacterId = if (state.pickedCharacterId == characterId) {
-                        characterId
-                    } else {
-                        state.pickedCharacterId
-                    },
+                    pickedCharacterId = characterId,
                     justDoneTasks = state.justDoneTasks + given.rewarded?.dailyTasks.orEmpty(),
                     notice = givenNotice(name, given),
                 )

@@ -55,6 +55,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -65,6 +66,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import sc.eidolon.nativeapp.AppContainer
 import sc.eidolon.nativeapp.core.Time
@@ -119,10 +121,13 @@ fun GiftsScreen(
     }
     val snackbar = remember { SnackbarHostState() }
     var showReset by remember { mutableStateOf(false) }
-    LaunchedEffect(state.notice) {
-        val notice = state.notice ?: return@LaunchedEffect
-        snackbar.showSnackbar(notice)
-        vm.consumeNotice()
+    LaunchedEffect(Unit) {
+        // 用 Unit 做 key：consumeNotice 把 state.notice 清空时不会取消正在显示的 Snackbar；
+        // 页面离开时通知已经消费，返回后不会再弹一次。
+        snapshotFlow { vm.state.notice }.filterNotNull().collect { notice ->
+            vm.consumeNotice()
+            snackbar.showSnackbar(notice)
+        }
     }
 
     Scaffold(
@@ -177,7 +182,6 @@ fun GiftsScreen(
                 baseUrl = baseUrl,
                 pickedCharacterId = state.pickedCharacterId,
                 sending = state.giving,
-                onPick = vm::pickCharacter,
                 onSend = { characterId -> vm.give(characterId) },
             )
         }
@@ -607,7 +611,6 @@ private fun GivePanel(
     baseUrl: String,
     pickedCharacterId: String?,
     sending: Boolean,
-    onPick: (String?) -> Unit,
     onSend: (String) -> Unit,
 ) {
     val ordered = remember(characters, pickedCharacterId) {
@@ -645,7 +648,6 @@ private fun GivePanel(
                     selected = selected == character.id,
                     onClick = {
                         selected = character.id
-                        onPick(character.id)
                     },
                 )
             }
