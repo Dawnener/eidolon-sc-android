@@ -7,7 +7,7 @@ import httpx
 
 from eidolon.llm import ChatMessage
 from eidolon.reply_format import FORMAT_INSTRUCTIONS
-from tests.conftest import MANO_SHEET, ClientFactory
+from tests.conftest import MANO_SHEET, CharacterConfig, ClientFactory
 from tests.fakes import FakeLLM, system_of
 
 
@@ -190,6 +190,25 @@ async def test_prompt_carries_the_character_sheet_and_the_conversation_so_far(
         ("assistant", "<ja>ピーちゃんです！</ja><zh>是小皮！</zh>"),
         ("user", "好可爱"),
     ]
+
+
+async def test_her_voice_examples_come_after_the_history(
+    make_client: ClientFactory, characters: CharacterConfig
+):
+    voice = "# 说话方式\n自称「凛世」，每句用「……」断开。\n制作人：你好。\n凛世：……はい。"
+    characters.add(
+        "rinze", "杜野凛世", "# 人设\n你是杜野凛世。", intro="安静的偶像", voice=voice,
+    )
+    llm = FakeLLM(["<ja>……はい。</ja><zh>……是。</zh>"])
+    client = make_client(llm)
+    conversation_id = await start_conversation(client, "rinze")
+
+    await send_turn(client, conversation_id, "你好")
+
+    prompt = llm.prompts[0]
+    assert prompt[-1].role == "user"
+    assert prompt[-2].role == "system"
+    assert prompt[-2].content.rstrip().endswith(voice)
 
 
 async def test_conversations_are_kept_apart(make_client: ClientFactory):

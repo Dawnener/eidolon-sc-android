@@ -159,6 +159,7 @@ class CharacterConfig:
         other_names: tuple[str, str, str] | None = None,
         liked_gifts: tuple[str, ...] | None = ("cake",),
         photo: tuple[str, str] | None = None,
+        voice: str | None = None,
     ) -> "CharacterConfig":
         """`greeting` is her greeting in Japanese, delivery cues and all, and its subtitle;
         `call_opener` her call opener, likewise; `other_names` her `name_zh`, `name_kana`
@@ -205,6 +206,8 @@ class CharacterConfig:
         if photo is not None:
             entry += f"photo_tag = {json.dumps(photo[0])}\n"
             entry += f"photo_appearance = {json.dumps(photo[1])}\n"
+        if voice is not None:
+            entry += f"voice = {json.dumps(voice, ensure_ascii=False)}\n"
         self._entries.append(entry)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.path.write_text("\n".join(self._entries), encoding="utf-8")

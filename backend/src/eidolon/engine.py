@@ -1101,6 +1101,10 @@ class ConversationEngine:
         if any(m.photo_failed for m in history):
             context.append(NOT_RECEIVED)
         context += closing
+        if character.voice:
+            # Last, right before the user's words: a positive imitation anchor, so the model
+            # follows her voice rather than any out-of-character wording in the history.
+            context.append(character.voice)
         prompt.append(ChatMessage("system", "\n\n".join(context)))
         prompt.append(ChatMessage("user", f"{narration.get(None, '')}{text}"))
         return prompt

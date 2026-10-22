@@ -214,6 +214,9 @@ async def test_conversation_with_a_character_removed_from_the_configuration_is_g
 def test_repository_configures_its_characters_with_their_voices():
     loaded = load_characters(REPO_CHARACTERS / "characters.toml")
 
+    assert "凛世的说话方式" in loaded["rinze"].voice
+    assert "まあ" in loaded["rinze"].voice
+
     assert {id: c.voice_id for id, c in loaded.items()} == {
         "mano": "a1150f3d14ac46fb8ea59c7803cd8357",
         "hiori": "df43849d16ae48fe87f5670b6a2b81b3",

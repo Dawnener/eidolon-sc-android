@@ -135,6 +135,9 @@ class Character:
     facts: tuple[Fact, ...] = ()
     """Her character facts, one entry per section of her facts file."""
     sheet_path: Path | None = None
+    voice: str = ""
+    """How she speaks, in a short block with examples, put after the history in every turn's
+    prompt so that the model imitates this rather than its own earlier wording."""
     idol_id: int | None = None
     """Who she is in the original's Spine mirror (`idolId` in `spine_manifest.json`)."""
     default_outfit: str | None = None
@@ -241,6 +244,11 @@ def _parse_character(
     if not isinstance(speakers, list) or not all(isinstance(s, str) and s for s in speakers):
         raise CharacterConfigError(f"角色 {label} 的 speakers 应为说话人名字的列表")
 
+    voice = entry.get("voice", "")
+    if not isinstance(voice, str):
+        raise CharacterConfigError(f"角色 {label} 的 voice 应为字符串")
+    voice = voice.strip()
+
     liked_gifts = entry.get("liked_gifts", [])
     if not isinstance(liked_gifts, list) or not all(isinstance(g, str) for g in liked_gifts):
         raise CharacterConfigError(f"角色 {label} 的 liked_gifts 应为礼物标识的列表")
@@ -278,6 +286,7 @@ def _parse_character(
         speakers=tuple(speakers),
         facts=facts,
         sheet_path=sheet_path,
+        voice=voice,
         idol_id=idol_id,
         default_outfit=default_outfit,
         greeting=_greeting(entry, label, readings),
