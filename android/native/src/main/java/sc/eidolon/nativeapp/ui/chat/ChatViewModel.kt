@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import sc.eidolon.nativeapp.data.api.ApiError
 import sc.eidolon.nativeapp.data.local.OwnKeysStore
@@ -87,25 +88,30 @@ class ChatViewModel(
                 val conversations = conversationsRepo.forCharacter(characterId)
                 val conversation = conversations.firstOrNull() ?: conversationsRepo.create(characterId)
                 val history = if (conversations.isEmpty()) listOf(conversation) else conversations
+                // 和消息并行取好感度，让礼物/成就入口和聊天内容一起出现，而不是晚一拍。
+                val affinityJob = async {
+                    try {
+                        giftsRepo.affinity(characterId)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
                 val messages = conversationsRepo.messages(conversation.id)
+                val affinity = affinityJob.await()
                 state = state.copy(
                     loading = false,
                     character = character,
                     conversationId = conversation.id,
                     log = ConversationLog().reduce(LogAction.Loaded(messages)),
                     ended = conversation.ended,
+                    affinity = affinity,
+                    coolingUntil = affinity?.cooldownUntil,
                     openError = null,
                     history = history,
                     viewing = null,
                 )
-                // 好感度是附加信息：慢或失败时不挡聊天打开。
-                val affinity = runCatching { giftsRepo.affinity(characterId) }.getOrNull()
-                if (state.conversationId == conversation.id) {
-                    state = state.copy(
-                        affinity = affinity,
-                        coolingUntil = affinity?.cooldownUntil,
-                    )
-                }
             } catch (error: Exception) {
                 state = state.copy(
                     loading = false,
@@ -235,12 +241,13 @@ class ChatViewModel(
             try {
                 val messages = conversationsRepo.messages(conversationId)
                 val affinity = runCatching { giftsRepo.affinity(characterId) }.getOrNull()
+                val currentAffinity = affinity ?: state.affinity
                 val log = ConversationLog().reduce(LogAction.Loaded(messages))
                 state = state.copy(
                     log = log,
                     ended = log.isEnded,
-                    affinity = affinity,
-                    coolingUntil = affinity?.cooldownUntil,
+                    affinity = currentAffinity,
+                    coolingUntil = currentAffinity?.cooldownUntil,
                 )
             } catch (_: Exception) {
                 // 刷新失败不打断当前聊天。

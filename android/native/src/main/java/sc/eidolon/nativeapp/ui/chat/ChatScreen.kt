@@ -1,6 +1,12 @@
 package sc.eidolon.nativeapp.ui.chat
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -113,6 +119,8 @@ import sc.eidolon.nativeapp.ui.theme.herColors
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+
+private enum class ChatPhase { Loading, Error, Chat }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -288,19 +296,31 @@ fun ChatScreen(
             )
         },
     ) { padding ->
-        Column(
+        AnimatedContent(
+            targetState = when {
+                state.loading -> ChatPhase.Loading
+                state.openError != null -> ChatPhase.Error
+                else -> ChatPhase.Chat
+            },
             modifier = Modifier.fillMaxSize().padding(padding),
-        ) {
-            when {
-                state.loading -> Box(Modifier.weight(1f)) { LoadingState("正在打开对话") }
-                state.openError != null -> Box(Modifier.weight(1f)) {
+            transitionSpec = {
+                (fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 30 }) togetherWith
+                    fadeOut(tween(160))
+            },
+            label = "chat-content",
+        ) { phase ->
+            when (phase) {
+                ChatPhase.Loading -> Box(Modifier.fillMaxSize()) {
+                    LoadingState("正在打开对话")
+                }
+                ChatPhase.Error -> Box(Modifier.fillMaxSize()) {
                     MessageState(
                         "对话没能打开",
                         state.openError,
                         "重试" to { vm.retryOpen() },
                     )
                 }
-                else -> {
+                ChatPhase.Chat -> Column(Modifier.fillMaxSize()) {
                     MessageList(
                         state = displayState,
                         her = her,
