@@ -15,6 +15,14 @@
 		format console
 	}
 
+	# Cloudflare Tunnel 过来时带着原始协议；HTTP 直接跳 HTTPS，基本认证和会话不能走明文。
+	# 局域网直连没有这个头，不受影响。
+	@plaintext header X-Forwarded-Proto http
+	redir @plaintext https://{host}{uri} 308
+
+	# Cloudflare Access 在边缘校验身份，但静态资源仍可能被边缘缓存；明确 no-store。
+	header >Cache-Control "private, no-store"
+
 	@apkIndex path /apk /apk/
 	handle @apkIndex {
 		header Content-Type "text/html; charset=utf-8"
@@ -51,6 +59,16 @@ HTML
 	handle_path /apk/* {
 		root * {$EIDOLON_APK_DIR:/nonexistent}
 		file_server
+	}
+
+	# 公网请求要保留浏览器真实的 Origin，公开部署的后端会校验它。
+	# 局域网直连仍改成 localhost，让没配 EIDOLON_DOMAIN 的本地开发也能用。
+	@public host eidolon.shiny-colors-ai.xyz
+	handle @public {
+		reverse_proxy 127.0.0.1:3000 {
+			header_up Host {hostport}
+			flush_interval -1
+		}
 	}
 
 	handle {

@@ -16,12 +16,17 @@ callback then sends the browser back to the sign-in settings (`/settings/sign-in
 `?linked=<provider>` or `?error=<reason>`.
 """
 
+import html
+import json
 import logging
 import secrets
+import threading
+from datetime import datetime, timedelta
 from typing import Annotated, Any
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import (
     BaseModel, Field, Secret, StrictBool, StringConstraints, field_validator, model_validator,
 )
@@ -50,7 +55,7 @@ from eidolon.identity import PROVIDER_NAMES, IdentityError
 from eidolon.own_keys import NO_PHOTOS, BroughtKeys, OwnKeyRejected, named_services
 from eidolon.price_catalog import describe_offer, describe_provider, describe_thinking
 from eidolon.reach_outs import ReachOutsOff
-from eidolon.store import LastSignInMethod
+from eidolon.store import LastSignInMethod, NotFound
 from eidolon.throttle import Throttle
 from eidolon.sessions import (
     SESSION_COOKIE,
@@ -66,6 +71,19 @@ log = logging.getLogger(__name__)
 STATE_COOKIE = "eidolon_oauth_state"
 STATE_LIFETIME = 600
 """How long, in seconds, the browser has to sign in at the provider and come back."""
+
+MOBILE_REDIRECT = "eidolon://auth"
+"""Where the browser sends a phone after signing in there; the app takes the one-off code
+from it and exchanges it for the session cookie in its own HTTP client."""
+
+MOBILE_CODE_LIFETIME = 120
+"""How long, in seconds, the app has to exchange the one-off code it came back with."""
+
+
+class MobileExchange(BaseModel):
+    """The one-off code from the browser callback, exchanged for a session by the app."""
+
+    code: str = Field(min_length=20, max_length=200)
 
 
 class DevLogin(BaseModel):
@@ -249,6 +267,35 @@ def add_account_routes(app: FastAPI, backend: Backend) -> None:
     store, settings, clock = backend.store, backend.settings, backend.clock
     accounts, providers = backend.accounts, backend.identity_providers
 
+    # One-off codes for the phone's own HTTP client, made when the browser finishes signing
+    # in and redeemed once by `exchange_mobile_sign_in`. They live only in this process and
+    # for `MOBILE_CODE_LIFETIME`; a restart only means signing in again.
+    mobile_codes: dict[str, tuple[str, datetime]] = {}
+    mobile_codes_lock = threading.Lock()
+
+    def issue_mobile_code(user_id: str) -> str:
+        code = secrets.token_urlsafe(32)
+        now = clock()
+        expires = now + timedelta(seconds=MOBILE_CODE_LIFETIME)
+        with mobile_codes_lock:
+            for old, (_, old_expires) in list(mobile_codes.items()):
+                if old_expires <= now:
+                    mobile_codes.pop(old, None)
+            while len(mobile_codes) >= 1024:
+                mobile_codes.pop(next(iter(mobile_codes)), None)
+            mobile_codes[code] = (user_id, expires)
+        return code
+
+    def redeem_mobile_code(code: str) -> str | None:
+        with mobile_codes_lock:
+            found = mobile_codes.pop(code, None)
+        if found is None:
+            return None
+        user_id, expires = found
+        if expires <= clock():
+            return None
+        return user_id
+
     def callback_url(provider: str) -> str:
         return f"{settings.public_origin}/api/auth/{provider}/callback"
 
@@ -271,24 +318,27 @@ def add_account_routes(app: FastAPI, backend: Backend) -> None:
 
     @app.get("/api/auth/{provider}/start")
     async def start_sign_in(
-        provider: str, request: Request, link: bool = False
+        provider: str, request: Request, link: bool = False, mobile: bool = False
     ) -> RedirectResponse:
         """Off to the provider to sign in, or with `link`, to link another identity to the
-        signed-in user."""
+        signed-in user; with `mobile`, back to the phone's own app instead of to a page."""
         identity_provider = providers.get(provider)  # pyright: ignore[reportArgumentType]
         if identity_provider is None:
             raise HTTPException(404, "没有这种登录方式")
+        if link and mobile:
+            raise HTTPException(400, "不能同时绑定身份和手机登录")
         if link:
             user = await session_user(request)
             if user is None or user.consented_at is None:
                 return RedirectResponse("/login", status_code=302)
-        state = secrets.token_urlsafe(24)
+        state = f"{'m' if mobile else 'l' if link else 'w'}.{secrets.token_urlsafe(24)}"
         response = RedirectResponse(
             identity_provider.authorize_url(state, callback_url(provider)), status_code=302
         )
+        purpose = "mobile" if mobile else "link" if link else "login"
         response.set_cookie(
             STATE_COOKIE,
-            f"{'link' if link else 'login'}:{provider}:{state}",
+            f"{purpose}:{provider}:{state}",
             max_age=STATE_LIFETIME,
             path="/api/auth",
             httponly=True,
@@ -304,10 +354,13 @@ def add_account_routes(app: FastAPI, backend: Backend) -> None:
         code: str | None = None,
         state: str | None = None,
         error: str | None = None,
-    ) -> RedirectResponse:
+    ) -> Response:
         purpose, expected_provider, expected_state = (
             request.cookies.get(STATE_COOKIE, "").split(":", 2) + ["", ""]
         )[:3]
+        # The state's prefix still says the browser came from the phone's app when the
+        # state cookie is gone; then the app can be told why instead of a dead web page.
+        mobile = purpose == "mobile" or (state or "").startswith("m.")
         linking = purpose == "link"
         back = "/settings/sign-in" if linking else "/login"
 
@@ -315,6 +368,27 @@ def add_account_routes(app: FastAPI, backend: Backend) -> None:
             response = RedirectResponse(to, status_code=302)
             response.delete_cookie(STATE_COOKIE, path="/api/auth")
             return response
+
+        def mobile_page(params: dict[str, str]) -> HTMLResponse:
+            """A page that opens the app, with a link in case the browser will not."""
+            target = f"{MOBILE_REDIRECT}?{urlencode(params)}"
+            response = HTMLResponse(
+                "<!doctype html><meta charset=utf-8>"
+                "<meta name=viewport content='width=device-width,initial-scale=1'>"
+                "<title>登录完成</title>"
+                "<body style='font:16px system-ui;padding:2rem'>"
+                "<p>登录完成，正在回到 Eidolon…</p>"
+                f"<p><a href='{html.escape(target, quote=True)}'>没有自动打开？点这里回到 Eidolon</a></p>"
+                f"<script>location.href={json.dumps(target)}</script>"
+                "</body>"
+            )
+            response.delete_cookie(STATE_COOKIE, path="/api/auth")
+            return response
+
+        def fail(reason: str) -> Response:
+            if mobile:
+                return mobile_page({"error": reason})
+            return go(f"{back}?error={reason}")
 
         identity_provider = providers.get(provider)  # pyright: ignore[reportArgumentType]
         if (
@@ -324,14 +398,16 @@ def add_account_routes(app: FastAPI, backend: Backend) -> None:
             or expected_provider != provider
             or not secrets.compare_digest(state, expected_state)
         ):
-            return go(f"{back}?error=state")
+            return fail("state")
+        if linking and mobile:
+            return fail("state")
         if error or not code:
-            return go(f"{back}?error=cancelled")
+            return fail("cancelled")
         try:
             identity = await identity_provider.identify(code, callback_url(provider))
         except IdentityError:
             log.warning("signing in with %s failed", provider, exc_info=True)
-            return go(f"{back}?error=provider")
+            return fail("provider")
         try:
             if linking:
                 user = await session_user(request)
@@ -341,10 +417,29 @@ def add_account_routes(app: FastAPI, backend: Backend) -> None:
                 return go(f"/settings/sign-in?linked={provider}")
             user = await accounts.sign_in(identity)
         except SignInRefused as e:
-            return go(f"{back}?error={e.reason}")
+            return fail(e.reason)
+        if mobile:
+            return mobile_page({"code": issue_mobile_code(user.id)})
         response = go("/conversations")
         await signed_in(user.id, response, request)
         return response
+
+    @app.post("/api/auth/mobile/exchange", status_code=204)
+    def exchange_mobile_sign_in(
+        body: MobileExchange, request: Request, response: Response
+    ) -> None:
+        """Take the one-off code from the phone's browser and start the session in its own
+        HTTP client, whose cookie jar the app keeps. The code works once and briefly."""
+        user_id = redeem_mobile_code(body.code)
+        if user_id is None:
+            raise HTTPException(401, "登录码已失效，请重新登录")
+        try:
+            user = store.get_user(user_id)
+        except NotFound:
+            raise HTTPException(401, "登录码已失效，请重新登录") from None
+        if user.banned_at is not None:
+            raise HTTPException(403, "这位用户已被封禁")
+        signed_in(user.id, response, request)
 
     @app.post("/api/auth/logout", status_code=204)
     async def logout(request: Request, response: Response) -> None:

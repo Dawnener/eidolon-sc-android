@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # 本地开发栈：后端 :8000、Next standalone :3000、Caddy :8080（手机访问的入口）。
+# 如果本机配了 ~/.cloudflared/config.yml，还会启动 Cloudflare Tunnel；
+# 公网身份校验由 Cloudflare Access 负责。
 #
 # 用法：
 #   bash scripts/dev-local.sh start     # 起后端、前端和 Caddy（默认）
@@ -18,6 +20,11 @@ STATE="$ROOT/logs/local-stack"
 CADDY="$HOME/.local/opt/caddy/caddy"
 APK_DIR="$ROOT/android/app/build/outputs/apk/debug"
 NATIVE_APK_DIR="$ROOT/android/native/build/outputs/apk"
+# 可选：本机已经建好 Cloudflare Tunnel 时，顺手启动公网入口。
+# 配置放在仓库外，里面是本机凭证，不提交。
+CLOUDFLARED_CONFIG="${EIDOLON_CLOUDFLARED_CONFIG:-$HOME/.cloudflared/config.yml}"
+CLOUDFLARED="${CLOUDFLARED:-$(command -v cloudflared || true)}"
+PUBLIC_HOST="$(awk '/^[[:space:]]*- hostname:/{print $3; exit}' "$CLOUDFLARED_CONFIG" 2>/dev/null || true)"
 
 LAN_IP="${EIDOLON_LAN_IP:-}"
 if [ -z "$LAN_IP" ]; then
@@ -35,10 +42,11 @@ env_value() {
 }
 
 ensure_env() {
-  [ -f "$ROOT/.env" ] || die "没有 $ROOT/.env：先 cp .env.example .env，再填 CHAT_LLM_* 和 EIDOLON_DEV_LOGIN=1"
-  # CHAT_LLM_* 三项可以都留空（纯自带密钥模式）；只填一部分时后端会拒绝启动并说明
-  [ "$(env_value EIDOLON_DEV_LOGIN)" = "1" ] || die ".env 里要设 EIDOLON_DEV_LOGIN=1"
-  [ -z "$(env_value EIDOLON_DOMAIN)" ] || die ".env 里的 EIDOLON_DOMAIN 要留空；开发登录和它不能同时用"
+  [ -f "$ROOT/.env" ] || die "没有 $ROOT/.env：先 cp .env.example .env，再填所需配置"
+  # 两种模式：本地开发登录（EIDOLON_DEV_LOGIN=1）或公开部署（EIDOLON_DOMAIN），不能同时开。
+  if [ "$(env_value EIDOLON_DEV_LOGIN)" = "1" ] && [ -n "$(env_value EIDOLON_DOMAIN)" ]; then
+    die ".env 里 EIDOLON_DEV_LOGIN 和 EIDOLON_DOMAIN 不能同时设置"
+  fi
 }
 
 ensure_uv() {
@@ -156,6 +164,19 @@ start_caddy() {
   wait_http http://127.0.0.1:8080/ 30 || die "Caddy 没起来，看 $STATE/caddy.log"
 }
 
+start_tunnel() {
+  if [ ! -f "$CLOUDFLARED_CONFIG" ] || [ -z "$CLOUDFLARED" ]; then
+    echo "没配置 Cloudflare Tunnel，跳过公网入口"
+    return
+  fi
+  if running cloudflared; then
+    echo "Cloudflare Tunnel 已在运行（pid $(cat "$(pid_file cloudflared)")）"
+  else
+    echo "起 Cloudflare Tunnel"
+    start_bg cloudflared "$CLOUDFLARED" tunnel --config "$CLOUDFLARED_CONFIG" run
+  fi
+}
+
 start() {
   ensure_env
   ensure_uv
@@ -164,8 +185,12 @@ start() {
   start_backend
   start_frontend
   start_caddy
+  start_tunnel
   echo
   echo "手机打开：http://$LAN_IP:8080/"
+  if [ -n "$PUBLIC_HOST" ]; then
+    echo "公网入口：https://$PUBLIC_HOST/（Cloudflare Access）"
+  fi
   if [ -f "$APK_DIR/app-debug.apk" ] || [ -f "$NATIVE_APK_DIR/native-debug.apk" ]; then
     echo "APK 下载：http://$LAN_IP:8080/apk/（原生 App / 网页壳）"
   else
@@ -176,7 +201,7 @@ start() {
 
 stop() {
   local name pid
-  for name in caddy frontend backend; do
+  for name in cloudflared caddy frontend backend; do
     local file
     file="$(pid_file "$name")"
     [ -f "$file" ] || continue
@@ -192,7 +217,7 @@ stop() {
 
 status() {
   local name
-  for name in backend frontend caddy; do
+  for name in backend frontend caddy cloudflared; do
     if running "$name"; then
       echo "$name: 运行中（pid $(cat "$(pid_file "$name")")）"
     else

@@ -3,6 +3,8 @@ later ones sign in as that user. GitHub accounts less than a year old, Google ac
 with an unverified email address and banned users are turned away with the reason. Driven
 through the API with the providers faked (FakeIdentityProvider)."""
 
+import html
+import re
 import sqlite3
 from dataclasses import replace
 from datetime import timedelta
@@ -220,6 +222,84 @@ async def test_signing_in_replaces_the_session_the_browser_had(
     stale = make_client(FakeLLM(), user=None)
     stale.cookies.set(SESSION_COOKIE, old, domain=COOKIE_DOMAIN)
     assert not await signed_in(stale)
+
+
+# The phone's own app (ticket 04)
+
+
+def mobile_target(response: httpx.Response) -> str:
+    """The `eidolon://auth?…` address the browser page tells the phone to open."""
+    match = re.search(r"href='(eidolon://auth\?[^']+)'", response.text)
+    assert match is not None, response.text
+    return html.unescape(match.group(1))
+
+
+async def test_the_phone_gets_a_one_off_code_and_exchanges_it_for_its_session(
+    make_client: ClientFactory, github: FakeIdentityProvider
+):
+    client = make_client(FakeLLM(), user=None)
+    start = await client.get("/api/auth/github/start", params={"mobile": "1"})
+    [state] = parse_qs(urlsplit(start.headers["location"]).query)["state"]
+    assert state.startswith("m.")
+    code = github.will_identify(github_identity())
+
+    callback = await client.get(
+        "/api/auth/github/callback", params={"code": code, "state": state}
+    )
+
+    assert callback.status_code == 200
+    location = mobile_target(callback)
+    assert location.startswith("eidolon://auth?")
+    [one_time] = parse_qs(urlsplit(location).query)["code"]
+    assert SESSION_COOKIE not in client.cookies
+
+    exchanged = await client.post("/api/auth/mobile/exchange", json={"code": one_time})
+
+    assert exchanged.status_code == 204
+    assert SESSION_COOKIE in client.cookies
+    assert await signed_in(client)
+    assert (await client.post(
+        "/api/auth/mobile/exchange", json={"code": one_time}
+    )).status_code == 401
+
+
+async def test_a_mobile_sign_in_that_fails_says_why_in_the_app(
+    make_client: ClientFactory, github: FakeIdentityProvider
+):
+    cancelled_client = make_client(FakeLLM(), user=None)
+    start = await cancelled_client.get("/api/auth/github/start", params={"mobile": "1"})
+    [state] = parse_qs(urlsplit(start.headers["location"]).query)["state"]
+    cancelled = await cancelled_client.get(
+        "/api/auth/github/callback", params={"error": "access_denied", "state": state}
+    )
+    assert mobile_target(cancelled) == "eidolon://auth?error=cancelled"
+
+    wrong_state_client = make_client(FakeLLM(), user=None)
+    await wrong_state_client.get("/api/auth/github/start", params={"mobile": "1"})
+    wrong_state = await wrong_state_client.get(
+        "/api/auth/github/callback", params={"code": "nobody", "state": "wrong"}
+    )
+    assert mobile_target(wrong_state) == "eidolon://auth?error=state"
+
+    too_new_client = make_client(FakeLLM(), user=None, clock=FakeClock())
+    start = await too_new_client.get("/api/auth/github/start", params={"mobile": "1"})
+    [state] = parse_qs(urlsplit(start.headers["location"]).query)["state"]
+    young = github.will_identify(
+        github_identity(created_at=START - timedelta(days=364))
+    )
+    too_new = await too_new_client.get(
+        "/api/auth/github/callback", params={"code": young, "state": state}
+    )
+    assert mobile_target(too_new) == "eidolon://auth?error=too_new"
+    assert SESSION_COOKIE not in too_new_client.cookies
+
+
+async def test_a_phone_sign_in_cannot_also_be_a_link_request(
+    make_client: ClientFactory, github: FakeIdentityProvider
+):
+    client = make_client(FakeLLM())
+    res = await client.get("/api/auth/github/start", params={"mobile": "1", "link": "1"})
+    assert res.status_code == 400
 
 
 # Google (ticket 03)
