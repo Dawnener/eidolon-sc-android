@@ -43,6 +43,30 @@ class TurnEventParserTest {
     }
 
     @Test
+    fun doneCarriesAffinityAndRewards() {
+        val payload = """
+            {"type":"done",
+             "message":{"id":12,"role":"character","text":null,"ja":"はい","zh":"嗯",
+               "created_at":"2026-10-21T09:05:00+00:00",
+               "segments":[{"ja":"はい","zh":"嗯"}],
+               "affinity":{"up":true,"tier_changed":false,"tier":"trust","cooldown":false,"thawed":false}},
+             "affinity":{"tier":"trust","cooldown_until":null},
+             "ended":null,
+             "rewarded":{"draws":2,"reset_cards":1,"daily_tasks":["one_turn"],
+               "achievements":[{"achievement":"turns","character_id":"mano","stage":1,"draws":1}],
+               "completed":[{"character_id":"mano","reset_cards":1}],
+               "rewarded_at":"2026-10-21T09:06:00+00:00"}}
+        """.trimIndent()
+        val done = TurnEventParser.parse(payload) as TurnEvent.Done
+
+        assertEquals("trust", done.message.affinity?.tier)
+        assertEquals(2, done.rewarded?.draws)
+        assertEquals(1, done.rewarded?.resetCards)
+        assertEquals(listOf("one_turn"), done.rewarded?.dailyTasks)
+        assertEquals("mano", done.rewarded?.completed?.single()?.characterId)
+    }
+
+    @Test
     fun errorAndUnknown() {
         assertEquals(
             TurnEvent.Error("角色暂时无法回复"),

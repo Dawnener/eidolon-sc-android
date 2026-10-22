@@ -12,13 +12,20 @@ import sc.eidolon.nativeapp.data.api.ApiError
 import sc.eidolon.nativeapp.data.local.OwnKeysStore
 import sc.eidolon.nativeapp.data.repo.CharacterRepository
 import sc.eidolon.nativeapp.data.repo.ConversationRepository
+import sc.eidolon.nativeapp.data.repo.GiftsRepository
+import sc.eidolon.nativeapp.model.AffinityChange
+import sc.eidolon.nativeapp.model.AffinityStatus
 import sc.eidolon.nativeapp.model.Character
 import sc.eidolon.nativeapp.model.Conversation
 import sc.eidolon.nativeapp.model.ConversationLog
 import sc.eidolon.nativeapp.model.Failure
+import sc.eidolon.nativeapp.model.HerAchievements
 import sc.eidolon.nativeapp.model.LogAction
 import sc.eidolon.nativeapp.model.TurnEvent
+import sc.eidolon.nativeapp.model.rewardNoticeText
 import java.time.Instant
+
+data class AffinityCue(val change: AffinityChange, val id: Long = System.nanoTime())
 
 data class PastConversation(
     val conversation: Conversation,
@@ -36,6 +43,12 @@ data class ChatState(
     val failure: Failure? = null,
     val ended: Boolean = false,
     val coolingUntil: Instant? = null,
+    val affinity: AffinityStatus? = null,
+    val affinityCue: AffinityCue? = null,
+    val rewardNotice: String? = null,
+    val herAchievements: HerAchievements? = null,
+    val achievementsLoading: Boolean = false,
+    val achievementsError: String? = null,
     val openError: String? = null,
     val history: List<Conversation> = emptyList(),
     val historyLoading: Boolean = false,
@@ -46,6 +59,7 @@ class ChatViewModel(
     private val characterId: String,
     private val charactersRepo: CharacterRepository,
     private val conversationsRepo: ConversationRepository,
+    private val giftsRepo: GiftsRepository,
     private val ownKeysStore: OwnKeysStore,
     private val accountId: () -> String?,
 ) : ViewModel() {
@@ -84,6 +98,14 @@ class ChatViewModel(
                     history = history,
                     viewing = null,
                 )
+                // 好感度是附加信息：慢或失败时不挡聊天打开。
+                val affinity = runCatching { giftsRepo.affinity(characterId) }.getOrNull()
+                if (state.conversationId == conversation.id) {
+                    state = state.copy(
+                        affinity = affinity,
+                        coolingUntil = affinity?.cooldownUntil,
+                    )
+                }
             } catch (error: Exception) {
                 state = state.copy(
                     loading = false,
@@ -124,6 +146,18 @@ class ChatViewModel(
                         is TurnEvent.PhotosUsedUp -> apply(LogAction.PhotosUsedUp(event.retryAt))
                         is TurnEvent.Done -> {
                             apply(LogAction.Done(event.message, event.ended))
+                            val cue = event.message.affinity?.let { AffinityCue(it) }
+                            state = state.copy(
+                                affinity = event.affinity ?: state.affinity,
+                                coolingUntil = if (event.affinity != null) {
+                                    event.affinity.cooldownUntil
+                                } else {
+                                    state.coolingUntil
+                                },
+                                affinityCue = cue ?: state.affinityCue,
+                                rewardNotice = event.rewarded?.let { rewardNoticeText(it) }
+                                    ?: state.rewardNotice,
+                            )
                             terminal = true
                         }
                         is TurnEvent.Error -> {
@@ -181,7 +215,7 @@ class ChatViewModel(
                     conversationId = conversation.id,
                     log = ConversationLog(),
                     ended = false,
-                    coolingUntil = null,
+                    coolingUntil = state.affinity?.cooldownUntil,
                     draft = "",
                     failure = null,
                     viewing = null,
@@ -191,6 +225,55 @@ class ChatViewModel(
                 state = state.copy(failure = Failure(error.message ?: "新对话没能开始"))
             }
         }
+    }
+
+    /** 回到聊天页时刷新消息和好感度，让从礼物页送出的礼物事件出现。 */
+    fun refreshOnResume() {
+        if (state.loading || state.busy || state.viewing != null) return
+        val conversationId = state.conversationId ?: return
+        viewModelScope.launch {
+            try {
+                val messages = conversationsRepo.messages(conversationId)
+                val affinity = runCatching { giftsRepo.affinity(characterId) }.getOrNull()
+                val log = ConversationLog().reduce(LogAction.Loaded(messages))
+                state = state.copy(
+                    log = log,
+                    ended = log.isEnded,
+                    affinity = affinity,
+                    coolingUntil = affinity?.cooldownUntil,
+                )
+            } catch (_: Exception) {
+                // 刷新失败不打断当前聊天。
+            }
+        }
+    }
+
+    fun loadHerAchievements() {
+        if (state.achievementsLoading) return
+        state = state.copy(achievementsLoading = true, achievementsError = null)
+        viewModelScope.launch {
+            try {
+                val achievements = giftsRepo.achievements(characterId)
+                state = state.copy(
+                    achievementsLoading = false,
+                    herAchievements = achievements,
+                    achievementsError = if (achievements == null) "成就暂时没有开放" else null,
+                )
+            } catch (error: Exception) {
+                state = state.copy(
+                    achievementsLoading = false,
+                    achievementsError = error.message ?: "成就没能读取",
+                )
+            }
+        }
+    }
+
+    fun clearAffinityCue() {
+        state = state.copy(affinityCue = null)
+    }
+
+    fun dismissRewardNotice() {
+        state = state.copy(rewardNotice = null)
     }
 
     fun loadHistory() {

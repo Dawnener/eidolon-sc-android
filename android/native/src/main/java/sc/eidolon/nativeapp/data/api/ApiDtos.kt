@@ -20,6 +20,16 @@ import sc.eidolon.nativeapp.model.Recorded
 import sc.eidolon.nativeapp.model.ReachOutModel
 import sc.eidolon.nativeapp.model.Segment
 import sc.eidolon.nativeapp.model.SignInMethod
+import sc.eidolon.nativeapp.model.Stats
+import sc.eidolon.nativeapp.model.StatsAchievements
+import sc.eidolon.nativeapp.model.StatsCalls
+import sc.eidolon.nativeapp.model.StatsGiftMost
+import sc.eidolon.nativeapp.model.StatsGifts
+import sc.eidolon.nativeapp.model.StatsHeatmap
+import sc.eidolon.nativeapp.model.StatsRange
+import sc.eidolon.nativeapp.model.StatsTier
+import sc.eidolon.nativeapp.model.StatsVisits
+import sc.eidolon.nativeapp.model.CharacterStats
 import java.time.Instant
 
 @Serializable
@@ -96,6 +106,9 @@ data class ExemptionDto(val turns: Boolean = false, val calls: Boolean = false)
 
 @Serializable
 data class DevLoginRequest(val name: String)
+
+@Serializable
+data class MobileExchangeRequest(val code: String)
 
 @Serializable
 data class ConsentRequest(
@@ -257,6 +270,7 @@ data class DoneDto(
     val message: MessageDto,
     val affinity: AffinityStatusDto? = null,
     val ended: EventDto? = null,
+    val rewarded: RewardedDto? = null,
 )
 
 @Serializable
@@ -393,6 +407,8 @@ fun EventDto.toRecorded(): Recorded.ConversationEvent? {
         kind = eventKind,
         at = Time.parseInstant(createdAt) ?: Instant.EPOCH,
         giftName = giftName,
+        giftId = giftId,
+        affinity = affinity?.toDomain(),
     )
 }
 
@@ -402,4 +418,82 @@ fun ReachOutDto.toRecorded(): Recorded.ReachOut = Recorded.ReachOut(
     zh = zh,
     segments = segments.map { Segment(it.ja, it.zh) },
     at = Time.parseInstant(createdAt) ?: Instant.EPOCH,
+)
+
+@Serializable
+data class StatsDto(
+    @SerialName("days_known") val daysKnown: Int = 0,
+    val visits: VisitsDto = VisitsDto(),
+    @SerialName("all_hours") val allHours: List<Int> = emptyList(),
+    val heatmap: HeatmapDto = HeatmapDto(),
+    val affinity: List<TierGroupDto>? = null,
+    val achievements: AchievementsDto? = null,
+    val range: InRangeDto = InRangeDto(),
+)
+
+@Serializable
+data class VisitsDto(val current: Int = 0, val longest: Int = 0)
+
+@Serializable
+data class HeatmapDto(val from: String = "", val counts: List<Int> = emptyList())
+
+@Serializable
+data class TierGroupDto(val tier: String = "", val characters: List<String> = emptyList())
+
+@Serializable
+data class AchievementsDto(val stages: Int = 0, val complete: Int = 0)
+
+@Serializable
+data class InRangeDto(
+    val span: String = "all",
+    val turns: Int = 0,
+    @SerialName("by_hour") val byHour: List<Int> = emptyList(),
+    val characters: List<CharacterInRangeDto> = emptyList(),
+    val calls: CallsDto = CallsDto(),
+    val gifts: GiftsDto? = null,
+)
+
+@Serializable
+data class CharacterInRangeDto(
+    @SerialName("character_id") val characterId: String,
+    val turns: Int = 0,
+    @SerialName("days_known") val daysKnown: Int = 0,
+    @SerialName("call_seconds") val callSeconds: Double = 0.0,
+)
+
+@Serializable
+data class CallsDto(val count: Int = 0, val seconds: Double = 0.0)
+
+@Serializable
+data class GiftsDto(
+    val given: Int = 0,
+    val liked: Int = 0,
+    val most: GiftMostDto? = null,
+)
+
+@Serializable
+data class GiftMostDto(
+    @SerialName("character_id") val characterId: String,
+    val given: Int = 0,
+)
+
+fun StatsDto.toDomain(): Stats = Stats(
+    daysKnown = daysKnown,
+    visits = StatsVisits(visits.current, visits.longest),
+    allHours = allHours,
+    heatmap = StatsHeatmap(heatmap.from, heatmap.counts),
+    affinity = affinity?.map { StatsTier(it.tier, it.characters) },
+    achievements = achievements?.let { StatsAchievements(it.stages, it.complete) },
+    range = StatsRange(
+        span = range.span,
+        turns = range.turns,
+        byHour = range.byHour,
+        characters = range.characters.map {
+            CharacterStats(it.characterId, it.turns, it.daysKnown, it.callSeconds)
+        },
+        calls = StatsCalls(range.calls.count, range.calls.seconds),
+        gifts = range.gifts?.let {
+            StatsGifts(it.given, it.liked, it.most?.let { m -> StatsGiftMost(m.characterId, m.given) })
+        },
+    ),
 )

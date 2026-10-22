@@ -153,7 +153,7 @@ private fun DarkSystemBars() {
 
 /** 第一屏：品牌、白光分光和「开始」。 */
 @Composable
-fun WelcomeScreen(onStart: () -> Unit) {
+fun WelcomeScreen(onStart: () -> Unit, startLabel: String = "开始") {
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { shown = true }
 
@@ -221,7 +221,7 @@ fun WelcomeScreen(onStart: () -> Unit) {
                         ),
                         modifier = Modifier.widthIn(min = 180.dp).height(52.dp),
                     ) {
-                        Text("开始", style = MaterialTheme.typography.titleMedium)
+                        Text(startLabel, style = MaterialTheme.typography.titleMedium)
                     }
                 }
                 Spacer(Modifier.weight(1f))

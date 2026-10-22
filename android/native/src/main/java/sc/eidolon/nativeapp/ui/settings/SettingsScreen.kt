@@ -48,10 +48,13 @@ fun SettingsScreen(
     onOpenOwnKeys: () -> Unit,
     onOpenReachOutModel: () -> Unit,
     onOpenMemories: () -> Unit,
+    onOpenStats: () -> Unit,
+    onOpenDataPackage: () -> Unit,
     onChangeServer: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var confirmLogout by remember { mutableStateOf(false) }
+    var confirmLogoutEverywhere by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     // null 表示部署者没开搭话；此时开关不可用。
     var reachOuts by remember(account.reachOuts) { mutableStateOf(account.reachOuts) }
@@ -149,6 +152,18 @@ fun SettingsScreen(
         )
         HorizontalDivider()
         SettingsRow(
+            title = "统计",
+            subtitle = "来访、聊天排行和分享图",
+            onClick = onOpenStats,
+        )
+        HorizontalDivider()
+        SettingsRow(
+            title = "数据包",
+            subtitle = "导出或导入对话、记忆和制作人档案",
+            onClick = onOpenDataPackage,
+        )
+        HorizontalDivider()
+        SettingsRow(
             title = "关于",
             subtitle = "Eidolon 原生 0.1.0 · 非官方粉丝作品，角色由 AI 扮演",
         )
@@ -157,6 +172,11 @@ fun SettingsScreen(
             title = "退出登录",
             subtitle = "会清除这台设备上保存的自带密钥",
             onClick = { confirmLogout = true },
+        )
+        SettingsRow(
+            title = "所有设备退出登录",
+            subtitle = "结束这台和其他已登录设备上的会话",
+            onClick = { confirmLogoutEverywhere = true },
         )
         SettingsRow(
             title = "删除账号",
@@ -182,6 +202,25 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmLogout = false }) { Text("取消") }
+            },
+        )
+    }
+
+    if (confirmLogoutEverywhere) {
+        AlertDialog(
+            onDismissRequest = { confirmLogoutEverywhere = false },
+            title = { Text("所有设备退出登录？") },
+            text = { Text("这台设备和其他设备上的登录都会结束，需要重新登录。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmLogoutEverywhere = false
+                        scope.launch { container.session.logoutEverywhere() }
+                    },
+                ) { Text("全部退出") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmLogoutEverywhere = false }) { Text("取消") }
             },
         )
     }

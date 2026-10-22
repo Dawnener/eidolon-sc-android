@@ -68,6 +68,8 @@ sealed interface Recorded {
         val kind: EventKind,
         val at: Instant,
         val giftName: String? = null,
+        val giftId: String? = null,
+        val affinity: AffinityChange? = null,
     ) : Recorded
 
     data class ReachOut(
@@ -147,6 +149,46 @@ data class Memory(
     val superseded: Boolean = false,
 )
 
+data class Stats(
+    val daysKnown: Int,
+    val visits: StatsVisits,
+    val allHours: List<Int>,
+    val heatmap: StatsHeatmap,
+    val affinity: List<StatsTier>?,
+    val achievements: StatsAchievements?,
+    val range: StatsRange,
+)
+
+data class StatsVisits(val current: Int, val longest: Int)
+
+data class StatsHeatmap(val from: String, val counts: List<Int>)
+
+data class StatsTier(val tier: String, val characters: List<String>)
+
+data class StatsAchievements(val stages: Int, val complete: Int)
+
+data class StatsRange(
+    val span: String,
+    val turns: Int,
+    val byHour: List<Int>,
+    val characters: List<CharacterStats>,
+    val calls: StatsCalls,
+    val gifts: StatsGifts?,
+)
+
+data class CharacterStats(
+    val characterId: String,
+    val turns: Int,
+    val daysKnown: Int,
+    val callSeconds: Double,
+)
+
+data class StatsCalls(val count: Int, val seconds: Double)
+
+data class StatsGifts(val given: Int, val liked: Int, val most: StatsGiftMost? = null)
+
+data class StatsGiftMost(val characterId: String, val given: Int)
+
 sealed interface TurnEvent {
     data class User(val text: String) : TurnEvent
 
@@ -160,6 +202,7 @@ sealed interface TurnEvent {
         val message: Recorded.CharacterMessage,
         val ended: Recorded.ConversationEvent? = null,
         val affinity: AffinityStatus? = null,
+        val rewarded: Reward? = null,
     ) : TurnEvent
 
     data class Error(val message: String) : TurnEvent

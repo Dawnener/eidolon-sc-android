@@ -20,6 +20,10 @@ class PreferencesStore(
         val userId = stringPreferencesKey("user_id")
         val accountName = stringPreferencesKey("account_name")
         val pushEnabled = booleanPreferencesKey("push_enabled")
+        val accessClientId = stringPreferencesKey("access_client_id")
+        val accessClientSecret = stringPreferencesKey("access_client_secret")
+        val basicAuthUsername = stringPreferencesKey("basic_auth_username")
+        val basicAuthPassword = stringPreferencesKey("basic_auth_password")
 
         fun ownKeys(authority: String, userId: String) =
             stringPreferencesKey("own_keys.$authority.$userId")
@@ -82,6 +86,60 @@ class PreferencesStore(
     suspend fun clearOwnKeys(authority: String, userId: String) {
         context.eidolonDataStore.edit { prefs ->
             prefs.remove(Keys.ownKeys(authority, userId))
+        }
+    }
+
+    suspend fun accessCredentials(): AccessCredentials? {
+        val prefs = context.eidolonDataStore.data.first()
+        val clientId = prefs[Keys.accessClientId] ?: return null
+        val secret = prefs[Keys.accessClientSecret] ?: return null
+        val plain = secure.decrypt(secret) ?: run {
+            clearAccessCredentials()
+            return null
+        }
+        return AccessCredentials(clientId, plain)
+    }
+
+    suspend fun setAccessCredentials(credentials: AccessCredentials) {
+        val ciphertext = secure.encrypt(credentials.clientSecret)
+            ?: error("这个设备无法保存访问凭证")
+        context.eidolonDataStore.edit { prefs ->
+            prefs[Keys.accessClientId] = credentials.clientId
+            prefs[Keys.accessClientSecret] = ciphertext
+        }
+    }
+
+    suspend fun clearAccessCredentials() {
+        context.eidolonDataStore.edit { prefs ->
+            prefs.remove(Keys.accessClientId)
+            prefs.remove(Keys.accessClientSecret)
+        }
+    }
+
+    suspend fun basicAuthCredentials(): BasicAuthCredentials? {
+        val prefs = context.eidolonDataStore.data.first()
+        val username = prefs[Keys.basicAuthUsername] ?: return null
+        val password = prefs[Keys.basicAuthPassword] ?: return null
+        val plain = secure.decrypt(password) ?: run {
+            clearBasicAuthCredentials()
+            return null
+        }
+        return BasicAuthCredentials(username, plain)
+    }
+
+    suspend fun setBasicAuthCredentials(credentials: BasicAuthCredentials) {
+        val ciphertext = secure.encrypt(credentials.password)
+            ?: error("这个设备无法保存访问凭证")
+        context.eidolonDataStore.edit { prefs ->
+            prefs[Keys.basicAuthUsername] = credentials.username
+            prefs[Keys.basicAuthPassword] = ciphertext
+        }
+    }
+
+    suspend fun clearBasicAuthCredentials() {
+        context.eidolonDataStore.edit { prefs ->
+            prefs.remove(Keys.basicAuthUsername)
+            prefs.remove(Keys.basicAuthPassword)
         }
     }
 }

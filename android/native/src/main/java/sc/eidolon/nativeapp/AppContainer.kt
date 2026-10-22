@@ -9,6 +9,7 @@ import kotlinx.coroutines.launch
 import sc.eidolon.nativeapp.data.api.ApiErrorBus
 import sc.eidolon.nativeapp.data.api.EidolonApi
 import sc.eidolon.nativeapp.data.api.HttpFactory
+import sc.eidolon.nativeapp.data.local.AccessStore
 import sc.eidolon.nativeapp.data.local.CookieStore
 import sc.eidolon.nativeapp.data.local.OwnKeysStore
 import sc.eidolon.nativeapp.data.local.PreferencesStore
@@ -17,6 +18,7 @@ import sc.eidolon.nativeapp.data.local.ServerState
 import sc.eidolon.nativeapp.data.local.ServerStore
 import sc.eidolon.nativeapp.data.repo.CharacterRepository
 import sc.eidolon.nativeapp.data.repo.ConversationRepository
+import sc.eidolon.nativeapp.data.repo.GiftsRepository
 import sc.eidolon.nativeapp.data.repo.MemoryRepository
 import sc.eidolon.nativeapp.push.PushController
 import sc.eidolon.nativeapp.push.PushNotifier
@@ -26,6 +28,7 @@ class AppContainer(context: Context) {
     private val appContext = context.applicationContext
     val secureStore = SecureStore()
     val preferences = PreferencesStore(appContext, secureStore)
+    val accessStore = AccessStore(preferences)
     val serverState = ServerState()
     val serverStore = ServerStore(preferences)
     val cookieStore = CookieStore(
@@ -33,16 +36,26 @@ class AppContainer(context: Context) {
         secureStore,
     )
     val errorBus = ApiErrorBus()
-    val http = HttpFactory(appContext, { serverState.url }, cookieStore, errorBus)
+    val http = HttpFactory(
+        appContext,
+        { serverState.url },
+        cookieStore,
+        errorBus,
+        accessCredentials = accessStore::current,
+        basicAuthCredentials = accessStore::currentBasic,
+    )
     val api = EidolonApi(http, { serverState.url })
     val ownKeysStore = OwnKeysStore(preferences, serverState)
     val characters = CharacterRepository(api)
     val conversations = ConversationRepository(api)
     val memories = MemoryRepository(api)
+    val gifts = GiftsRepository(api)
     val session = SessionController(api, serverStore, preferences, cookieStore, ownKeysStore, serverState)
     val pushNotifier = PushNotifier(appContext)
     val push = PushController(appContext, session, preferences)
     val pendingChat = MutableStateFlow<String?>(null)
+    val pendingAuthCode = MutableStateFlow<String?>(null)
+    val authError = MutableStateFlow<String?>(null)
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     init {
@@ -50,6 +63,9 @@ class AppContainer(context: Context) {
     }
 
     fun start() {
-        appScope.launch { session.bootstrap() }
+        appScope.launch {
+            accessStore.load()
+            session.bootstrap()
+        }
     }
 }

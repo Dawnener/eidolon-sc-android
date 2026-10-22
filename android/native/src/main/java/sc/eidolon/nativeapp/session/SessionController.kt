@@ -1,5 +1,6 @@
 package sc.eidolon.nativeapp.session
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -129,9 +130,40 @@ class SessionController(
         }
     }
 
+    /**
+     * 欢迎页的内置服务器：只保存地址并把状态从 NoServer 变成 SignedOut，
+     * 不做网络探测，避免点登录时先闪一下服务器配置页。
+     */
+    suspend fun prepareServer(input: String): Boolean {
+        val normalized = ServerUrl.normalize(input) ?: return false
+        val changed = serverUrl != normalized
+        serverUrl = normalized
+        serverState.url = normalized
+        if (changed) {
+            serverState.deploymentId = null
+            cookieStore.clear()
+        }
+        serverStore.save(normalized)
+        if (_state.value is SessionState.NoServer) {
+            _state.value = SessionState.SignedOut
+        }
+        return true
+    }
+
     suspend fun signInDev(name: String): Result<Unit> = runCatching {
         api.devLogin(name.trim())
         bootstrap()
+    }
+
+    /** 浏览器 OAuth 回跳后，用一次性码在本机建立会话。 */
+    suspend fun exchangeMobileSignIn(code: String): Result<Unit> = try {
+        api.exchangeMobileSignIn(code.trim())
+        bootstrap()
+        Result.success(Unit)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(error)
     }
 
     suspend fun consent(): Result<Unit> = runCatching {
@@ -150,6 +182,13 @@ class SessionController(
 
     suspend fun logout(): Result<Unit> = runCatching {
         runCatching { api.logout() }
+        clearCurrentUser()
+        cookieStore.clear()
+        _state.value = SessionState.SignedOut
+    }
+
+    suspend fun logoutEverywhere(): Result<Unit> = runCatching {
+        api.logoutEverywhere()
         clearCurrentUser()
         cookieStore.clear()
         _state.value = SessionState.SignedOut

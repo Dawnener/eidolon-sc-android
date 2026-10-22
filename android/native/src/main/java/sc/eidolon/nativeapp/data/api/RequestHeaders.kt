@@ -1,5 +1,10 @@
 package sc.eidolon.nativeapp.data.api
 
+import okhttp3.Credentials
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import sc.eidolon.nativeapp.data.local.AccessCredentials
+import sc.eidolon.nativeapp.data.local.BasicAuthCredentials
 import java.net.URI
 import java.time.ZoneId
 
@@ -35,4 +40,35 @@ object RequestHeaders {
 
     fun isMutating(method: String): Boolean =
         method.uppercase() !in setOf("GET", "HEAD", "OPTIONS")
+
+    /**
+     * Cloudflare Access 服务令牌只发给当前后端所在的 HTTPS host:port。头像等图片可能
+     * 指向别的域名；明文 HTTP 也不带，免得令牌在局域网里被截获。
+     */
+    fun accessHeaders(
+        baseUrl: String?,
+        requestUrl: HttpUrl,
+        credentials: AccessCredentials?,
+    ): Pair<String, String>? {
+        if (credentials == null || !canSendAuth(baseUrl, requestUrl)) return null
+        return credentials.clientId to credentials.clientSecret
+    }
+
+    /** Basic Auth 的 `Authorization` 值，规则同 [accessHeaders]：只发给同一 HTTPS host:port。 */
+    fun basicAuthHeader(
+        baseUrl: String?,
+        requestUrl: HttpUrl,
+        credentials: BasicAuthCredentials?,
+    ): String? {
+        if (credentials == null || !canSendAuth(baseUrl, requestUrl)) return null
+        return Credentials.basic(credentials.username, credentials.password, Charsets.UTF_8)
+    }
+
+    private fun canSendAuth(baseUrl: String?, requestUrl: HttpUrl): Boolean {
+        val base = baseUrl?.toHttpUrlOrNull() ?: return false
+        return base.isHttps &&
+            requestUrl.isHttps &&
+            requestUrl.host == base.host &&
+            requestUrl.port == base.port
+    }
 }

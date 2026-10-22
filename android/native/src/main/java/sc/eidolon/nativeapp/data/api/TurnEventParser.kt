@@ -40,7 +40,15 @@ object TurnEventParser {
                 val affinity = root["affinity"]?.let {
                     runCatching { json.decodeFromJsonElement<AffinityStatusDto>(it) }.getOrNull()
                 }?.toDomain()
-                TurnEvent.Done(message = message, ended = ended, affinity = affinity)
+                val rewarded = root["rewarded"]?.let {
+                    runCatching { json.decodeFromJsonElement<RewardedDto>(it) }.getOrNull()
+                }?.toDomain()
+                TurnEvent.Done(
+                    message = message,
+                    ended = ended,
+                    affinity = affinity,
+                    rewarded = rewarded,
+                )
             }
             "error" -> TurnEvent.Error(root.string("message").orEmpty().ifBlank { "角色暂时无法回复，请稍后再试。" })
             else -> null

@@ -31,10 +31,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.outlined.CardGiftcard
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -43,6 +47,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -75,6 +81,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -90,10 +97,13 @@ import sc.eidolon.nativeapp.model.Failure
 import sc.eidolon.nativeapp.model.LastPreview
 import sc.eidolon.nativeapp.model.MessageLines
 import sc.eidolon.nativeapp.model.PhotoStatus
+import sc.eidolon.nativeapp.model.cueText
 import sc.eidolon.nativeapp.ui.components.CharacterAvatar
 import sc.eidolon.nativeapp.ui.components.LoadingState
 import sc.eidolon.nativeapp.ui.components.MessageState
 import sc.eidolon.nativeapp.ui.components.SharedAvatarModifier
+import sc.eidolon.nativeapp.ui.gifts.GiftArt
+import sc.eidolon.nativeapp.ui.gifts.GiftThumb
 import sc.eidolon.nativeapp.ui.theme.HerBubbleDark
 import sc.eidolon.nativeapp.ui.theme.ProducerInk
 import sc.eidolon.nativeapp.ui.theme.ProducerInkDark
@@ -112,6 +122,7 @@ fun ChatScreen(
     avatarModifier: SharedAvatarModifier = { Modifier },
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenGifts: (String) -> Unit,
 ) {
     val vm: ChatViewModel = viewModel(
         key = characterId,
@@ -121,6 +132,7 @@ fun ChatScreen(
                     characterId = characterId,
                     charactersRepo = container.characters,
                     conversationsRepo = container.conversations,
+                    giftsRepo = container.gifts,
                     ownKeysStore = container.ownKeysStore,
                     accountId = { container.session.account?.id },
                 )
@@ -139,9 +151,26 @@ fun ChatScreen(
     val zone = remember { Time.zone() }
     val cooling = state.coolingUntil?.isAfter(now) == true
     var showHistory by remember { mutableStateOf(false) }
+    var showAchievements by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Conversation?>(null) }
+    val snackbar = remember { SnackbarHostState() }
     val viewing = state.viewing
     BackHandler(enabled = viewing != null) { vm.backToCurrent() }
+    LifecycleResumeEffect(Unit) {
+        vm.refreshOnResume()
+        onPauseOrDispose { }
+    }
+    LaunchedEffect(state.rewardNotice) {
+        val notice = state.rewardNotice ?: return@LaunchedEffect
+        snackbar.showSnackbar(notice)
+        vm.dismissRewardNotice()
+    }
+    LaunchedEffect(state.affinityCue?.id) {
+        if (state.affinityCue == null) return@LaunchedEffect
+        delay(2_600)
+        vm.clearAffinityCue()
+    }
     val displayState = viewing?.let {
         state.copy(
             log = it.log,
@@ -153,6 +182,7 @@ fun ChatScreen(
     Scaffold(
         // 外层 MainScaffold 已经为系统状态栏/导航栏留过边距，并在根上处理 IME 抬起
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 windowInsets = WindowInsets(0, 0, 0, 0),
@@ -191,19 +221,56 @@ fun ChatScreen(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                            } else {
+                                state.affinity?.let { affinity ->
+                                    AffinityBadge(
+                                        name = state.character?.name ?: "她",
+                                        color = state.character?.color ?: "#7FB4FF",
+                                        status = affinity,
+                                        change = state.affinityCue?.change,
+                                        now = now,
+                                        zone = zone,
+                                        onGiveGift = { onOpenGifts(characterId) },
+                                        onAchievements = {
+                                            vm.loadHerAchievements()
+                                            showAchievements = true
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = {
-                            vm.loadHistory()
-                            showHistory = true
-                        },
-                        enabled = !state.loading,
-                    ) {
-                        Icon(Icons.Outlined.History, contentDescription = "历史对话")
+                    if (viewing == null && state.affinity != null) {
+                        IconButton(onClick = { onOpenGifts(characterId) }) {
+                            Icon(Icons.Outlined.CardGiftcard, contentDescription = "送她礼物")
+                        }
+                    }
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Outlined.MoreVert, contentDescription = "更多")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("历史对话") },
+                                onClick = {
+                                    menuOpen = false
+                                    vm.loadHistory()
+                                    showHistory = true
+                                },
+                            )
+                            if (state.affinity != null) {
+                                DropdownMenuItem(
+                                    text = { Text("成就") },
+                                    onClick = {
+                                        menuOpen = false
+                                        vm.loadHerAchievements()
+                                        showAchievements = true
+                                    },
+                                )
+                            }
+                        }
                     }
                 },
             )
@@ -228,6 +295,7 @@ fun ChatScreen(
                         baseUrl = baseUrl,
                         now = now,
                         zone = zone,
+                        affinityOn = state.affinity != null,
                         modifier = Modifier.weight(1f),
                     )
                     if (viewing != null) {
@@ -245,6 +313,7 @@ fun ChatScreen(
                             onSend = vm::send,
                             onNewConversation = vm::newConversation,
                             onOpenSettings = onOpenSettings,
+                            onOpenGifts = { onOpenGifts(characterId) },
                             onDismissFailure = vm::dismissFailure,
                         )
                     }
@@ -295,6 +364,14 @@ fun ChatScreen(
                 }
             }
         }
+    }
+
+    if (showAchievements) {
+        HerAchievementsSheet(
+            state = state,
+            onDismiss = { showAchievements = false },
+            onRetry = vm::loadHerAchievements,
+        )
     }
 
     pendingDelete?.let { conversation ->
@@ -428,6 +505,7 @@ private fun MessageList(
     baseUrl: String,
     now: Instant,
     zone: ZoneId,
+    affinityOn: Boolean,
     modifier: Modifier,
 ) {
     val lines = MessageLines.linesOf(state.log.entries, now, zone)
@@ -531,12 +609,15 @@ private fun MessageList(
                             last = line.last,
                             baseUrl = baseUrl,
                             zone = zone,
+                            affinityOn = affinityOn,
                         )
                         is Entry.Event -> EventLine(
                             entry = entry,
                             name = state.character?.name ?: "她",
                             last = line.last,
+                            baseUrl = baseUrl,
                             zone = zone,
+                            affinityOn = affinityOn,
                         )
                     }
                 }
@@ -612,6 +693,7 @@ private fun CharacterBubble(
     last: Boolean,
     baseUrl: String,
     zone: ZoneId,
+    affinityOn: Boolean,
 ) {
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -699,6 +781,11 @@ private fun CharacterBubble(
                         }
                     }
                 }
+                if (affinityOn) {
+                    entry.affinity?.let { change ->
+                        cueText(change, character?.name ?: "她")?.let { CueText(it) }
+                    }
+                }
                 if (last) {
                     Text(
                         text = Time.formatClock(entry.at, zone),
@@ -713,21 +800,41 @@ private fun CharacterBubble(
 }
 
 @Composable
-private fun EventLine(entry: Entry.Event, name: String, last: Boolean, zone: ZoneId) {
+private fun EventLine(
+    entry: Entry.Event,
+    name: String,
+    last: Boolean,
+    baseUrl: String,
+    zone: ZoneId,
+    affinityOn: Boolean,
+) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            text = when (entry.kind) {
-                EventKind.HungUp -> "$name 挂断了电话"
-                EventKind.Gift -> "你送给 $name 一份${entry.giftName ?: "礼物"}"
-                EventKind.Ended -> "$name 结束了对话"
-            },
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (entry.kind == EventKind.Gift && entry.giftId != null) {
+                GiftThumb(baseUrl, entry.giftId, Modifier.size(32.dp))
+            }
+            Text(
+                text = when (entry.kind) {
+                    EventKind.HungUp -> "$name 挂断了电话"
+                    EventKind.Gift -> "你送给 $name 一份${entry.giftName ?: "礼物"}"
+                    EventKind.Ended -> "$name 结束了对话"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+        if (affinityOn) {
+            entry.affinity?.let { change ->
+                cueText(change, name)?.let { CueText(it) }
+            }
+        }
         if (last) {
             Text(
                 text = Time.formatClock(entry.at, zone),
@@ -736,6 +843,19 @@ private fun EventLine(entry: Entry.Event, name: String, last: Boolean, zone: Zon
             )
         }
     }
+}
+
+@Composable
+private fun CueText(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .padding(top = 3.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(100.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
 }
 
 @Composable
@@ -748,6 +868,7 @@ private fun Composer(
     onSend: () -> Unit,
     onNewConversation: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenGifts: () -> Unit,
     onDismissFailure: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
@@ -764,15 +885,20 @@ private fun Composer(
                     coolingUntil = state.coolingUntil,
                     zone = zone,
                     onNewConversation = onNewConversation,
+                    onOpenGifts = if (state.affinity != null) onOpenGifts else null,
                 )
-                cooling -> Text(
-                    text = "$name 现在不想说话。${
-                        state.coolingUntil?.let { Time.formatClock(it, zone) }.orEmpty()
-                    } 以后可以再找她",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(8.dp),
-                )
+                cooling -> Column(Modifier.padding(8.dp)) {
+                    Text(
+                        text = "$name 现在不想说话。${
+                            state.coolingUntil?.let { Time.formatClock(it, zone) }.orEmpty()
+                        } 以后可以再找她",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (state.affinity != null) {
+                        TextButton(onClick = onOpenGifts) { Text("送她一件礼物") }
+                    }
+                }
                 else -> {
                     var input by remember { mutableStateOf(TextFieldValue(state.draft)) }
                     LaunchedEffect(state.draft) {
@@ -881,6 +1007,7 @@ private fun EndedCard(
     coolingUntil: Instant?,
     zone: ZoneId,
     onNewConversation: () -> Unit,
+    onOpenGifts: (() -> Unit)?,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -897,7 +1024,10 @@ private fun EndedCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        TextButton(onClick = onNewConversation) { Text("开个新对话") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onNewConversation) { Text("开个新对话") }
+            onOpenGifts?.let { TextButton(onClick = it) { Text("送她一件礼物") } }
+        }
     }
 }
 

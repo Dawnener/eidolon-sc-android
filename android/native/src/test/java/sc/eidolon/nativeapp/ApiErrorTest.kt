@@ -51,6 +51,23 @@ class ApiErrorTest {
     }
 
     @Test
+    fun giftsClosed409IsDistinctFromOtherConflicts() {
+        val closed = ApiError.from(
+            409,
+            """{"detail":"礼物没有开放","gifts_closed":true}""",
+        )
+        assertTrue(closed.giftsClosed)
+        assertTrue(!ApiError.from(409, """{"detail":"没有抽奖次数了"}""").giftsClosed)
+    }
+
+    @Test
+    fun packageErrorCodesAreKept() {
+        val error = ApiError.from(413, """{"detail":"too big","code":"too_large"}""")
+        assertEquals("too_large", error.code)
+        assertEquals(null, ApiError.from(409, """{"detail":"plain"}""").code)
+    }
+
+    @Test
     fun nonJsonBodyFallsBack() {
         val error = ApiError.from(500, "<html>oops</html>")
         assertEquals("请求失败（500）", error.message)

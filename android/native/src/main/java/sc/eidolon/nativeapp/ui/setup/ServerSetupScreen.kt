@@ -8,13 +8,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -22,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -31,20 +35,66 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.launch
 import sc.eidolon.nativeapp.AppContainer
 import sc.eidolon.nativeapp.BuildConfig
+import sc.eidolon.nativeapp.data.local.AccessStore
 import sc.eidolon.nativeapp.session.SessionController
 import sc.eidolon.nativeapp.ui.onboarding.OnboardingPage
 
-class ServerSetupViewModel(private val session: SessionController) : ViewModel() {
+class ServerSetupViewModel(
+    private val session: SessionController,
+    private val accessStore: AccessStore,
+) : ViewModel() {
     var url by mutableStateOf(BuildConfig.DEFAULT_SERVER_URL)
+    var clientId by mutableStateOf("")
+    var clientSecret by mutableStateOf("")
+    var showAccess by mutableStateOf(false)
+    var basicUser by mutableStateOf("")
+    var basicPassword by mutableStateOf("")
+    var showBasic by mutableStateOf(false)
     var busy by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
     var connected by mutableStateOf(false)
 
+    init {
+        viewModelScope.launch {
+            accessStore.load()
+            accessStore.current()?.let {
+                clientId = it.clientId
+                clientSecret = it.clientSecret
+                showAccess = true
+            }
+            accessStore.currentBasic()?.let {
+                basicUser = it.username
+                basicPassword = it.password
+                showBasic = true
+            }
+        }
+    }
+
     fun connect() {
         if (busy) return
+        val id = clientId.trim()
+        val secret = clientSecret.trim()
+        if (id.isBlank() != secret.isBlank()) {
+            error = "Cloudflare Access 的 Client ID 和 Secret 要一起填"
+            return
+        }
+        val user = basicUser.trim()
+        val password = basicPassword.trim()
+        if (user.isBlank() != password.isBlank()) {
+            error = "HTTP 基本认证的用户名和密码要一起填"
+            return
+        }
         viewModelScope.launch {
             busy = true
             error = null
+            try {
+                if (id.isBlank()) accessStore.clear() else accessStore.save(id, secret)
+                if (user.isBlank()) accessStore.clearBasic() else accessStore.saveBasic(user, password)
+            } catch (e: Exception) {
+                busy = false
+                error = e.message ?: "访问凭证没能保存"
+                return@launch
+            }
             val result = session.useServer(url)
             busy = false
             result.onSuccess {
@@ -71,7 +121,9 @@ fun ServerSetupScreen(
     onDone: () -> Unit,
 ) {
     val vm: ServerSetupViewModel = viewModel(
-        factory = viewModelFactory { initializer { ServerSetupViewModel(container.session) } },
+        factory = viewModelFactory {
+            initializer { ServerSetupViewModel(container.session, container.accessStore) }
+        },
     )
     LaunchedEffect(vm.connected) {
         if (vm.connected) onDone()
@@ -93,6 +145,7 @@ fun ServerSetupScreen(
     }
     Column(
         modifier = outer
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -120,6 +173,56 @@ private fun ServerFields(vm: ServerSetupViewModel) {
             keyboardActions = KeyboardActions(onGo = { vm.connect() }),
             isError = vm.error != null,
         )
+        TextButton(onClick = { vm.showBasic = !vm.showBasic }) {
+            Text(if (vm.showBasic) "隐藏 HTTP 基本认证" else "使用 HTTP 基本认证（可选）")
+        }
+        if (vm.showBasic) {
+            Text(
+                "服务器入口套了用户名密码时填写；局域网直连不需要。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = vm.basicUser,
+                onValueChange = { vm.basicUser = it },
+                label = { Text("用户名") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = vm.basicPassword,
+                onValueChange = { vm.basicPassword = it },
+                label = { Text("密码") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        TextButton(onClick = { vm.showAccess = !vm.showAccess }) {
+            Text(if (vm.showAccess) "隐藏 Cloudflare Access" else "使用 Cloudflare Access（可选）")
+        }
+        if (vm.showAccess) {
+            Text(
+                "服务器套了 Cloudflare Access 时，填服务令牌；直连服务器或局域网不需要。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = vm.clientId,
+                onValueChange = { vm.clientId = it },
+                label = { Text("Access Client ID") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = vm.clientSecret,
+                onValueChange = { vm.clientSecret = it },
+                label = { Text("Access Client Secret") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         vm.error?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }

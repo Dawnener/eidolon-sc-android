@@ -29,6 +29,8 @@ sealed interface Entry {
         val kind: EventKind,
         override val at: Instant,
         val giftName: String? = null,
+        val giftId: String? = null,
+        val affinity: AffinityChange? = null,
     ) : Entry
 }
 
@@ -175,6 +177,8 @@ fun toEntry(recorded: Recorded): Entry = when (recorded) {
         kind = recorded.kind,
         at = recorded.at,
         giftName = recorded.giftName,
+        giftId = recorded.giftId,
+        affinity = recorded.affinity,
     )
     is Recorded.ReachOut -> Entry.Character(
         key = "r${recorded.id}",

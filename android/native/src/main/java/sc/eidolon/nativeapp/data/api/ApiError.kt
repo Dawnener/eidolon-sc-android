@@ -3,6 +3,7 @@ package sc.eidolon.nativeapp.data.api
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -16,6 +17,8 @@ class ApiError(
     val retryAt: Instant? = null,
     val cooldownUntil: Instant? = null,
     val retryAfterSeconds: Long? = null,
+    val giftsClosed: Boolean = false,
+    val code: String? = null,
 ) : Exception(message) {
     val isUnauthorized: Boolean get() = status == 401
     val isConsentRequired: Boolean get() = status == 428
@@ -41,6 +44,8 @@ class ApiError(
                 cooldownUntil = (root?.get("cooldown_until") as? JsonPrimitive)?.contentOrNull
                     ?.let(Time::parseInstant),
                 retryAfterSeconds = retryAfter?.toLongOrNull()?.takeIf { it >= 0 },
+                giftsClosed = (root?.get("gifts_closed") as? JsonPrimitive)?.booleanOrNull == true,
+                code = (root?.get("code") as? JsonPrimitive)?.contentOrNull,
             )
         }
     }

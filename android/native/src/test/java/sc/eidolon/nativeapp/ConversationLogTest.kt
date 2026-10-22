@@ -89,10 +89,14 @@ class ConversationLogTest {
 
     @Test
     fun eventIsAppendedOnce() {
-        val event = Recorded.ConversationEvent(9, EventKind.Gift, at, "花")
+        val change = sc.eidolon.nativeapp.model.AffinityChange(up = true, tier = "trust")
+        val event = Recorded.ConversationEvent(9, EventKind.Gift, at, "花", "bouquet", change)
         var log = ConversationLog().reduce(LogAction.EventRecorded(event))
         log = log.reduce(LogAction.EventRecorded(event))
         assertEquals(1, log.entries.size)
-        assertEquals("花", (log.entries.single() as Entry.Event).giftName)
+        val stored = log.entries.single() as Entry.Event
+        assertEquals("花", stored.giftName)
+        assertEquals("bouquet", stored.giftId)
+        assertEquals("trust", stored.affinity?.tier)
     }
 }

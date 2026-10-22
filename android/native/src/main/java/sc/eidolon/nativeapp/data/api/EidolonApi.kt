@@ -24,13 +24,22 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okio.Buffer
 import sc.eidolon.nativeapp.core.EidolonJson
 import sc.eidolon.nativeapp.model.Account
+import sc.eidolon.nativeapp.model.AffinityStatus
 import sc.eidolon.nativeapp.model.Character
 import sc.eidolon.nativeapp.model.Conversation
+import sc.eidolon.nativeapp.model.DataPackageCategory
+import sc.eidolon.nativeapp.model.DataPackageImported
+import sc.eidolon.nativeapp.model.DrawOutcome
+import sc.eidolon.nativeapp.model.GiftInfo
+import sc.eidolon.nativeapp.model.GiftState
+import sc.eidolon.nativeapp.model.GivenGift
+import sc.eidolon.nativeapp.model.HerAchievements
 import sc.eidolon.nativeapp.model.KeyCheckResponse
 import sc.eidolon.nativeapp.model.LatestConversation
 import sc.eidolon.nativeapp.model.LlmModelsRequest
@@ -46,9 +55,12 @@ import sc.eidolon.nativeapp.model.OwnTtsRequest
 import sc.eidolon.nativeapp.model.ProducerProfile
 import sc.eidolon.nativeapp.model.Recorded
 import sc.eidolon.nativeapp.model.ReachOutModel
+import sc.eidolon.nativeapp.model.ResetOutcome
+import sc.eidolon.nativeapp.model.Stats
 import sc.eidolon.nativeapp.model.SttCheckResponse
 import sc.eidolon.nativeapp.model.TurnEvent
 import java.io.IOException
+import java.io.InputStream
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -66,6 +78,14 @@ class EidolonApi(
         postNoContent(
             "/api/auth/dev-login",
             json.encodeToString(DevLoginRequest.serializer(), DevLoginRequest(name)),
+        )
+    }
+
+    /** 用浏览器回跳带回来的一次性码，在 App 自己的 CookieJar 里建立会话。 */
+    suspend fun exchangeMobileSignIn(code: String) {
+        postNoContent(
+            "/api/auth/mobile/exchange",
+            json.encodeToString(MobileExchangeRequest.serializer(), MobileExchangeRequest(code)),
         )
     }
 
@@ -100,6 +120,86 @@ class EidolonApi(
 
     suspend fun saveProfile(request: ProfileRequest): ProducerProfile =
         putJson<ProfileRequest, ProfileDto>("/api/profile", request).toDomain()
+
+    suspend fun stats(range: String): Stats =
+        getJson<StatsDto>("/api/stats", mapOf("range" to range)).toDomain()
+
+    suspend fun giftCatalog(): List<GiftInfo> =
+        getJson<List<GiftDto>>("/api/gifts/catalog").map { it.toDomain() }
+
+    suspend fun gifts(): GiftState = getJson<GiftsStateDto>("/api/gifts").toDomain()
+
+    suspend fun drawGifts(all: Boolean): DrawOutcome =
+        postJson<DrawRequest, DrawResultDto>("/api/gifts/draws", DrawRequest(all)).toDomain()
+
+    suspend fun giveGift(characterId: String, giftId: String): GivenGift =
+        postJson<GiveGiftRequest, GivenDto>(
+            "/api/characters/$characterId/gifts",
+            GiveGiftRequest(giftId),
+        ).toDomain()
+
+    suspend fun useResetCard(): ResetOutcome =
+        postJsonNoBody<ResetResultDto>("/api/gifts/resets").toDomain()
+
+    suspend fun affinity(characterId: String): AffinityStatus? =
+        getJsonOrNull<AffinityStatusDto>("/api/characters/$characterId/affinity")?.toDomain()
+
+    suspend fun characterAchievements(characterId: String): HerAchievements? =
+        getJsonOrNull<HerAchievementsDto>("/api/characters/$characterId/achievements")?.toDomain()
+
+    suspend fun checkDataPackageExport(categories: List<DataPackageCategory>) {
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url(url("/api/account/data-package/export-check", includeQuery(categories)))
+                .get()
+                .build()
+            execute(http.transfer, request).use { response ->
+                if (!response.isSuccessful) {
+                    throw ApiError.from(response.code, response.body?.string().orEmpty())
+                }
+            }
+        }
+    }
+
+    /** 导出 zip 并直接写入调用方给的目标流；整个过程在 IO 线程。 */
+    suspend fun exportDataPackage(
+        categories: List<DataPackageCategory>,
+        writeTo: (InputStream) -> Unit,
+    ) = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(url("/api/account/data-package", includeQuery(categories)))
+            .get()
+            .build()
+        execute(http.transfer, request).use { response ->
+            if (!response.isSuccessful) {
+                throw ApiError.from(response.code, response.body?.string().orEmpty())
+            }
+            val body = response.body ?: throw ApiError.from(500, "空的导出数据")
+            body.byteStream().use(writeTo)
+        }
+    }
+
+    suspend fun importDataPackage(
+        categories: List<DataPackageCategory>,
+        body: RequestBody,
+    ): DataPackageImported = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(url("/api/account/data-package", includeQuery(categories)))
+            .post(body)
+            .build()
+        execute(http.transfer, request).use { response ->
+            val text = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw ApiError.from(response.code, text)
+            json.decodeFromString<DataPackageImportedDto>(text).toDomain()
+        }
+    }
+
+    suspend fun logoutEverywhere() {
+        postNoContent("/api/account/logout-everywhere")
+    }
+
+    private fun includeQuery(categories: List<DataPackageCategory>): Map<String, String> =
+        mapOf("include" to categories.joinToString(",") { it.wire })
 
     /** Her reach-outs, as they are recorded, while the caller keeps collecting. */
     fun pushEvents(): Flow<PushEventDto> = flow {
@@ -320,10 +420,19 @@ class EidolonApi(
         query: Map<String, String> = emptyMap(),
     ): T = json.decodeFromString<T>(getRaw(path, query))
 
+    private suspend inline fun <reified T> getJsonOrNull(path: String): T? {
+        val raw = getRaw(path)
+        return if (raw.isBlank() || raw.trim() == "null") null
+        else json.decodeFromString<T>(raw)
+    }
+
     private suspend inline fun <reified B, reified T> postJson(path: String, body: B): T {
         val text = post(path, json.encodeToString(body))
         return json.decodeFromString<T>(text)
     }
+
+    private suspend inline fun <reified T> postJsonNoBody(path: String): T =
+        json.decodeFromString<T>(post(path, null))
 
     private suspend fun post(path: String, body: String?): String = withContext(Dispatchers.IO) {
         val requestBody = (body ?: "").toRequestBody(JSON)

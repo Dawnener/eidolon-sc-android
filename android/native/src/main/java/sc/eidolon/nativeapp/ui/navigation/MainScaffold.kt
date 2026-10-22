@@ -1,6 +1,13 @@
 package sc.eidolon.nativeapp.ui.navigation
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -16,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CardGiftcard
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
@@ -29,21 +37,27 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import sc.eidolon.nativeapp.AppContainer
 import sc.eidolon.nativeapp.model.Account
 import sc.eidolon.nativeapp.ui.chat.ChatScreen
 import sc.eidolon.nativeapp.ui.conversations.ConversationListScreen
+import sc.eidolon.nativeapp.ui.datapackage.DataPackageScreen
+import sc.eidolon.nativeapp.ui.gifts.GiftsScreen
 import sc.eidolon.nativeapp.ui.memories.MemoriesScreen
 import sc.eidolon.nativeapp.ui.ownkeys.OwnKeysScreen
 import sc.eidolon.nativeapp.ui.profile.ProfileScreen
 import sc.eidolon.nativeapp.ui.reachout.ReachOutModelScreen
 import sc.eidolon.nativeapp.ui.settings.SettingsScreen
 import sc.eidolon.nativeapp.ui.setup.ServerSetupScreen
+import sc.eidolon.nativeapp.ui.stats.StatsScreen
 
 private const val TAB_FADE_MS = 180
 private const val SHEET_MS = 300
@@ -56,7 +70,32 @@ fun MainScaffold(container: AppContainer, account: Account) {
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
-    val showBar = route == Routes.Conversations || route == Routes.Settings
+    val currentTab = Routes.baseRoute(route)
+    val context = LocalContext.current
+    val showBar = currentTab in setOf(Routes.Conversations, Routes.Gifts, Routes.Settings)
+
+    // 从浏览器授权回来时，浏览器任务可能还在 App 任务下面。根页面按返回时
+    // 直接回桌面并移除 App 任务，避免一下退回 GitHub 授权页。
+    BackHandler(enabled = currentTab == Routes.Settings) {
+        nav.navigateToRoot(Routes.Conversations)
+    }
+    BackHandler(enabled = currentTab == Routes.Gifts) {
+        if (nav.previousBackStackEntry?.destination?.route == Routes.Chat) {
+            nav.popBackStack()
+        } else {
+            nav.navigateToRoot(Routes.Conversations)
+        }
+    }
+    BackHandler(enabled = currentTab == Routes.Conversations) {
+        context.startActivity(
+            Intent(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_HOME)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+        // 只把任务移到后台，不 finish：这样 App 仍会留在最近任务里，
+        // 同时不会露出下面的浏览器授权页。
+        context.findActivity()?.moveTaskToBack(true)
+    }
     val pendingChat by container.pendingChat.collectAsState()
     LaunchedEffect(pendingChat) {
         val characterId = pendingChat ?: return@LaunchedEffect
@@ -77,13 +116,19 @@ fun MainScaffold(container: AppContainer, account: Account) {
             ) {
                 NavigationBar {
                     NavigationBarItem(
-                        selected = route == Routes.Conversations,
+                        selected = currentTab == Routes.Conversations,
                         onClick = { nav.navigateToRoot(Routes.Conversations) },
                         icon = { Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null) },
                         label = { Text("对话") },
                     )
                     NavigationBarItem(
-                        selected = route == Routes.Settings,
+                        selected = currentTab == Routes.Gifts,
+                        onClick = { nav.navigateToRoot(Routes.Gifts) },
+                        icon = { Icon(Icons.Outlined.CardGiftcard, contentDescription = null) },
+                        label = { Text("礼物") },
+                    )
+                    NavigationBarItem(
+                        selected = currentTab == Routes.Settings,
                         onClick = { nav.navigateToRoot(Routes.Settings) },
                         icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
                         label = { Text("设置") },
@@ -114,28 +159,20 @@ fun MainScaffold(container: AppContainer, account: Account) {
                 composable(
                     route = Routes.Conversations,
                     enterTransition = {
-                        if (initialState.destination.route == Routes.Settings) {
-                            tabSlideIn(fromLeft = true)
-                        } else {
-                            fadeIn(tween(TAB_FADE_MS))
-                        }
+                        tabEnter(initialState.destination.route, targetState.destination.route)
                     },
                     exitTransition = {
-                        if (targetState.destination.route == Routes.Settings) {
-                            tabSlideOut(toLeft = true)
-                        } else {
-                            fadeOut(tween(TAB_FADE_MS))
-                        }
+                        tabExit(initialState.destination.route, targetState.destination.route)
                     },
                     popEnterTransition = {
-                        // 从聊天返回时用较大的位移；从设置切回对话时按标签页顺序从左侧滑入
-                        if (initialState.destination.route == Routes.Settings) {
-                            tabSlideIn(fromLeft = true)
-                        } else {
+                        // 从聊天返回时用较大的位移；从其他标签页回来按方向滑入
+                        if (initialState.destination.route == Routes.Chat) {
                             slideInHorizontally(
                                 animationSpec = tween(SHEET_MS, easing = FastOutSlowInEasing),
                                 initialOffsetX = { -it / 3 },
                             ) + fadeIn(tween(SHEET_MS))
+                        } else {
+                            tabEnter(initialState.destination.route, targetState.destination.route)
                         }
                     },
                     popExitTransition = { fadeOut(tween(TAB_FADE_MS)) },
@@ -194,31 +231,44 @@ fun MainScaffold(container: AppContainer, account: Account) {
                         },
                         onBack = { nav.popBackStack() },
                         onOpenSettings = { nav.navigate(Routes.OwnKeys) },
+                        onOpenGifts = { id -> nav.navigate(Routes.gifts(id)) },
+                    )
+                }
+                composable(
+                    route = Routes.GiftsPattern,
+                    arguments = listOf(
+                        navArgument("to") {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        },
+                    ),
+                    enterTransition = {
+                        tabEnter(initialState.destination.route, targetState.destination.route)
+                    },
+                    exitTransition = {
+                        tabExit(initialState.destination.route, targetState.destination.route)
+                    },
+                    popEnterTransition = { fadeIn(tween(SHEET_MS)) },
+                    popExitTransition = { fadeOut(tween(TAB_FADE_MS)) },
+                ) { entry ->
+                    GiftsScreen(
+                        container = container,
+                        preselectedCharacterId = entry.arguments?.getString("to"),
+                        onOpenConversations = { nav.navigateToRoot(Routes.Conversations) },
+                        onOpenChat = { characterId -> nav.navigate(Routes.chat(characterId)) },
                     )
                 }
                 composable(
                     route = Routes.Settings,
                     enterTransition = {
-                        if (initialState.destination.route == Routes.Conversations) {
-                            tabSlideIn(fromLeft = false)
-                        } else {
-                            fadeIn(tween(TAB_FADE_MS))
-                        }
+                        tabEnter(initialState.destination.route, targetState.destination.route)
                     },
-                    exitTransition = { fadeOut(tween(TAB_FADE_MS)) },
-                    popEnterTransition = {
-                        slideInHorizontally(
-                            animationSpec = tween(SHEET_MS, easing = FastOutSlowInEasing),
-                            initialOffsetX = { -it / 5 },
-                        ) + fadeIn(tween(SHEET_MS))
+                    exitTransition = {
+                        tabExit(initialState.destination.route, targetState.destination.route)
                     },
-                    popExitTransition = {
-                        if (targetState.destination.route == Routes.Conversations) {
-                            tabSlideOut(toLeft = false)
-                        } else {
-                            fadeOut(tween(TAB_FADE_MS))
-                        }
-                    },
+                    popEnterTransition = { fadeIn(tween(SHEET_MS)) },
+                    popExitTransition = { fadeOut(tween(TAB_FADE_MS)) },
                 ) {
                     SettingsScreen(
                         container = container,
@@ -227,6 +277,8 @@ fun MainScaffold(container: AppContainer, account: Account) {
                         onOpenOwnKeys = { nav.navigate(Routes.OwnKeys) },
                         onOpenReachOutModel = { nav.navigate(Routes.ReachOutModel) },
                         onOpenMemories = { nav.navigate(Routes.Memories) },
+                        onOpenStats = { nav.navigate(Routes.Stats) },
+                        onOpenDataPackage = { nav.navigate(Routes.DataPackage) },
                         onChangeServer = { nav.navigate(Routes.Server) },
                     )
                 }
@@ -241,6 +293,16 @@ fun MainScaffold(container: AppContainer, account: Account) {
                 }
                 composable(Routes.Memories) {
                     MemoriesScreen(container) { nav.popBackStack() }
+                }
+                composable(Routes.Stats) {
+                    StatsScreen(
+                        container = container,
+                        onBack = { nav.popBackStack() },
+                        onOpenConversations = { nav.navigateToRoot(Routes.Conversations) },
+                    )
+                }
+                composable(Routes.DataPackage) {
+                    DataPackageScreen(container) { nav.popBackStack() }
                 }
                 composable(Routes.Server) {
                     ServerSetupScreen(container, applySystemBarsPadding = false) { nav.popBackStack() }
@@ -264,10 +326,43 @@ private fun tabSlideOut(toLeft: Boolean) =
         targetOffsetX = { width -> if (toLeft) -width / 5 else width / 5 },
     ) + fadeOut(tween(TAB_FADE_MS))
 
+private val TAB_ROUTES = listOf(Routes.Conversations, Routes.Gifts, Routes.Settings)
+
+private fun tabIndex(route: String?): Int = TAB_ROUTES.indexOf(Routes.baseRoute(route))
+
+private fun tabEnter(initial: String?, target: String?): EnterTransition {
+    val from = tabIndex(initial)
+    val to = tabIndex(target)
+    return if (from >= 0 && to >= 0 && from != to) {
+        tabSlideIn(fromLeft = to < from)
+    } else {
+        fadeIn(tween(TAB_FADE_MS))
+    }
+}
+
+private fun tabExit(initial: String?, target: String?): ExitTransition {
+    val from = tabIndex(initial)
+    val to = tabIndex(target)
+    return if (from >= 0 && to >= 0 && from != to) {
+        tabSlideOut(toLeft = to > from)
+    } else {
+        fadeOut(tween(TAB_FADE_MS))
+    }
+}
+
 private fun androidx.navigation.NavHostController.navigateToRoot(route: String) {
     navigate(route) {
         popUpTo(graph.findStartDestination().id) { saveState = true }
         launchSingleTop = true
         restoreState = true
     }
+}
+
+private fun Context.findActivity(): Activity? {
+    var current: Context = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
+    return current as? Activity
 }

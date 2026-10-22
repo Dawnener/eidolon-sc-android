@@ -2,16 +2,14 @@ package sc.eidolon.nativeapp.ui.auth
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -20,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -27,6 +26,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import sc.eidolon.nativeapp.AppContainer
 import sc.eidolon.nativeapp.ui.onboarding.OnboardingPage
@@ -72,54 +72,104 @@ fun LoginScreen(container: AppContainer, onChangeServer: () -> Unit) {
             initializer { LoginViewModel(container.session, container.api) }
         },
     )
+    val context = LocalContext.current
+    val authError by container.authError.collectAsStateWithLifecycle()
+
+    fun openProvider(provider: String) {
+        val base = container.session.serverUrl ?: return
+        container.authError.value = null
+        vm.error = null
+        openOAuth(context, base, provider)
+    }
+
     OnboardingPage(
         title = "登录",
         subtitle = "和 283 事务所的偶像说说话。",
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(
-                "服务器：${container.session.serverUrl.orEmpty()}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             when {
                 vm.loading -> CircularProgressIndicator()
-                vm.providers?.devLogin == true -> {
-                    OutlinedTextField(
-                        value = vm.name,
-                        onValueChange = { vm.name = it },
-                        label = { Text("用户名") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { vm.signIn() }),
-                    )
-                    Button(
-                        onClick = { vm.signIn() },
-                        enabled = !vm.busy && vm.name.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        if (vm.busy) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.padding(end = 8.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
+                vm.providers != null -> {
+                    val options = requireNotNull(vm.providers)
+                    if (options.providers.isNotEmpty()) {
+                        options.providers.forEachIndexed { index, provider ->
+                            val label = oauthProviderLabel(provider)
+                            if (index == 0) {
+                                Button(
+                                    onClick = { openProvider(provider) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { Text("使用 $label 登录") }
+                            } else {
+                                OutlinedButton(
+                                    onClick = { openProvider(provider) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { Text("使用 $label 登录") }
+                            }
+                        }
+                        Text(
+                            "会打开浏览器完成 GitHub / Google 授权，完成后自动回到 App。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (options.devLogin) {
+                        if (options.providers.isNotEmpty()) {
+                            Text(
+                                "或用开发登录",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        Text(if (vm.busy) "正在登录…" else "登录")
+                        OutlinedTextField(
+                            value = vm.name,
+                            onValueChange = { vm.name = it },
+                            label = { Text("用户名") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    container.authError.value = null
+                                    vm.signIn()
+                                },
+                            ),
+                        )
+                        Button(
+                            onClick = {
+                                container.authError.value = null
+                                vm.signIn()
+                            },
+                            enabled = !vm.busy && vm.name.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            if (vm.busy) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.padding(end = 8.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            }
+                            Text(if (vm.busy) "正在登录…" else "登录")
+                        }
+                    }
+                    if (options.providers.isEmpty() && !options.devLogin) {
+                        Text(
+                            "这个部署没有配置可用的登录方式。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
-                vm.providers != null -> {
-                    Text(
-                        "这个部署没有开启开发登录。此版本暂不支持 GitHub/Google 登录。",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
-            vm.error?.let {
+            (authError ?: vm.error)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
-            TextButton(onClick = onChangeServer) { Text("更换服务器") }
+            TextButton(
+                onClick = {
+                    container.pendingAuthCode.value = null
+                    container.authError.value = null
+                    onChangeServer()
+                },
+            ) { Text("更换服务器") }
         }
     }
 }

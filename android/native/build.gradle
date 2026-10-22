@@ -15,8 +15,8 @@ android {
         targetSdk 34
         versionCode 1
         versionName '0.1.0'
-        // 首次启动由用户填写服务器地址；这里不写死任何局域网地址。
-        buildConfigField "String", "DEFAULT_SERVER_URL", '""'
+        // 首次启动直接连这个部署；用户仍然可以在设置里更换服务器。
+        buildConfigField "String", "DEFAULT_SERVER_URL", '"https://eidolon.shiny-colors-ai.xyz"'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
