@@ -103,14 +103,13 @@ fun OwnKeysScreen(container: AppContainer, onBack: () -> Unit) {
                 )
             }
             state.exemption?.let {
-                Text(
-                    text = buildString {
-                        if (it.turns) append("文字对话带上自己的 LLM 不计入每小时限额。")
-                        if (it.calls) append(" 通话带上自己的语音密钥不计入限额。")
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (it.calls) {
+                    Text(
+                        text = "通话带上自己的语音密钥不计入限额。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             state.error?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)

@@ -32,6 +32,7 @@ import sc.eidolon.nativeapp.core.EidolonJson
 import sc.eidolon.nativeapp.model.Account
 import sc.eidolon.nativeapp.model.AffinityStatus
 import sc.eidolon.nativeapp.model.Character
+import sc.eidolon.nativeapp.model.CallSetup
 import sc.eidolon.nativeapp.model.Conversation
 import sc.eidolon.nativeapp.model.DataPackageCategory
 import sc.eidolon.nativeapp.model.DataPackageImported
@@ -52,6 +53,7 @@ import sc.eidolon.nativeapp.model.OwnLlmRequest
 import sc.eidolon.nativeapp.model.OwnMemoryLlmRequest
 import sc.eidolon.nativeapp.model.OwnSttRequest
 import sc.eidolon.nativeapp.model.OwnTtsRequest
+import sc.eidolon.nativeapp.model.OutfitCard
 import sc.eidolon.nativeapp.model.ProducerProfile
 import sc.eidolon.nativeapp.model.Recorded
 import sc.eidolon.nativeapp.model.ReachOutModel
@@ -263,6 +265,27 @@ class EidolonApi(
 
     suspend fun characters(): List<Character> =
         getJson<List<CharacterDto>>("/api/characters").map { it.toDomain() }
+
+    /** ICE servers and call limits; `own` names the user's own services the call will bring. */
+    suspend fun callSetup(conversationId: String, own: List<String>): CallSetup {
+        val query = buildMap {
+            put("conversation", conversationId)
+            if (own.isNotEmpty()) put("own", own.joinToString(","))
+        }
+        return getJson<CallSetupDto>("/api/ice-servers", query).toDomain()
+    }
+
+    /** The outfit list is on the stand assets host, not on the backend; fetch it by its absolute URL. */
+    suspend fun outfits(url: String): List<OutfitCard> = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(url).get().build()
+        execute(http.api, request).use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw ApiError.from(response.code, body, response.header("Retry-After"))
+            }
+            json.decodeFromString<OutfitListDto>(body).toDomain(url)
+        }
+    }
 
     suspend fun latestConversations(): List<LatestConversation> =
         getJson<List<LatestConversationDto>>("/api/conversations/latest").map { it.toDomain() }

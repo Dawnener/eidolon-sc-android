@@ -33,6 +33,7 @@ Release 目前用自动生成的 debug keystore 签名，方便侧载和覆盖�
 - 搭话：显示角色主动发来的消息、未读圆点；搭话模型可以在 App 里填，服务器用 `EIDOLON_SECRET_KEY` 加密保存；
 - 推送：设置里的开关默认关；开启后前台服务维持 SSE 长连接，收到搭话弹系统通知，点开进入对应角色对话；关闭开关会立即停止服务；
 - 礼物 / 好感度 / 成就 / 每日任务：底部「礼物」页支持抽奖、背包、送礼物、重置卡、每日任务和全角色成就；聊天里显示好感度徽章、升降提示、冷却，以及该角色的成就；
+- 通话：全屏 WebRTC 通话（Pipecat SmallWebRTC）、麦克风权限、静音/免提、实时日语台词与中文字幕、计时和结束原因；服务器配了立绘素材时，用官方 Spine 3.6 runtime 显示她的待机、眨眼、表情和口型；右上角衣架可以按服务器上的衣装清单换私服/演出服，选择在本机按角色记住；
 - 统计与分享图：认识天数、来访热力图、好感度分组、成就数量、回合/通话/礼物、排行和 24 小时分布；
 - 数据包：设置里导出对话/照片/记忆/档案，或选择 zip 导入；导入前可勾选要恢复的内容；
 - 账号安全：退出登录、所有设备退出登录、删除账号；
@@ -41,18 +42,26 @@ Release 目前用自动生成的 debug keystore 签名，方便侧载和覆盖�
 
 ### 还没有的
 
-- 语音通话 / WebRTC（成就里的通话时长会保持 0）；
+- 后台/锁屏通话（前台服务、音频中断恢复）和 TURN 公网中继的验收；
 - 照片实际显示（聊天里只有占位框）；
 - 公告、赞助、服务状态、管理后台；
 - Google 登录、登录方式绑定/解绑；
 - 外观/主题设置；
-- 落地页 3D、Spine 立绘。
+- 落地页 3D。
 
 需要这些功能时可以用网页壳，或者继续往原生 App 里补。
 
 ### 服务器地址
 
 原生 App 的 `DEFAULT_SERVER_URL` 在 `android/native/build.gradle`，当前内置公开部署地址；首次启动不需要填写。仍可在「设置 → 服务器」换成别的部署。启动本地栈后，脚本会打印当前局域网 IP；换 Wi-Fi 或 IP 变了，在 App 的「设置 → 服务器」改即可。
+
+### 通话立绘
+
+通话页优先显示服务器返回的 Spine 立绘（`/api/characters` 里的 `stand.default_outfit`）。App 里带着官方 spine-ts 3.6 runtime 的副本（`native/src/main/assets/stand/`，原样取自 `frontend/public/vendor/spine-3.6/`），在透明 WebView 里播放；素材下载失败、设备不支持 WebGL 或服务器没有配 `EIDOLON_STAND_ASSETS_URL` 时，自动退回原来的头像界面，不影响通话页其余部分。
+
+素材的公开地址由服务器决定，App 只读取 `/api/characters`，不需要额外配置。素材响应要带 CORS（`Access-Control-Allow-Origin: *`；如果桶只允许指定来源，要把原生 App 页面的来源 `https://appassets.androidplatform.net` 也放进去）；本地开发栈的 Caddy 已经把 `/stand-assets/` 指到 `corpus/stand` 并加了这个头。
+
+衣装清单随新卡更新：在 `backend/` 下运行 `uv run eidolon stand fetch --build ../corpus/stand`，再运行 `uv run eidolon stand outfits --build ../corpus/stand`，最后在 `frontend/` 下运行 `npm run stand:thumbnails -- --build ../corpus/stand`。原生 App 每次进入通话页会重新拉取清单。
 
 ## 网页壳（`app`）
 
@@ -208,7 +217,7 @@ Remove-NetFirewallRule -DisplayName "Eidolon dev 8080"
 ## 安全提醒与已知限制
 
 - 开发登录在局域网内对所有人开放：任何能访问 8080 的人都能冒充任意名字。只在可信网络使用，用完 `bash scripts/dev-local.sh stop`。
-- 没有 HTTPS，所以**不能通话**；麦克风需要安全上下文。原生 App 目前也没有通话界面。以后要做通话，可以给 Caddy 配自建 CA 的 HTTPS（并把根证书打进 APK 或装进手机），或者用 `adb reverse` 让页面从 `http://localhost` 加载。
+- 原生 App 的通话已经接 WebRTC，但需要 HTTPS 和麦克风权限；公网移动网络还要给后端配 TURN（coturn），否则只能在局域网/部分网络下接通。
 - 原生 App 的推送用前台服务维持 SSE，会有一条低优先级常驻通知；MIUI 仍可能杀进程，需要允许自启动并把省电策略设为「无限制」。
 - 原生 App 的照片只显示占位框，还没有实际图片；网页版可以看照片。
 - 没有 `corpus/` 时剧情回忆不可用；纯自带密钥且没有部署者向量化/重排/判断模型时，记忆、剧情回忆、好感度、照片也会关闭；不影响文字对话。

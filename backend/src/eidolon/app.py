@@ -12,7 +12,7 @@ from typing import Annotated
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.types import Receive, Scope, Send
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from eidolon.admission import CoolingDown
 from eidolon.assembly import Backend
@@ -163,7 +163,10 @@ class Offer(BaseModel):
     type: str
     pc_id: str | None = None
     restart_pc: bool | None = None
-    call: CallRequest | None = Field(None, alias="requestData")
+    call: CallRequest | None = Field(
+        None,
+        validation_alias=AliasChoices("requestData", "request_data", "call"),
+    )
 
 
 class IceCandidateInput(BaseModel):

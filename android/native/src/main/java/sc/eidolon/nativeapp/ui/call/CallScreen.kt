@@ -8,6 +8,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -15,30 +16,44 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CallEnd
+import androidx.compose.material.icons.outlined.Checkroom
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MicOff
 import androidx.compose.material.icons.outlined.VolumeOff
 import androidx.compose.material.icons.outlined.VolumeUp
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,8 +67,21 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.SystemClock
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import sc.eidolon.nativeapp.AppContainer
+import sc.eidolon.nativeapp.data.api.CallEvent
 import sc.eidolon.nativeapp.model.Character
+import sc.eidolon.nativeapp.model.Outfit
+import sc.eidolon.nativeapp.model.OutfitCard
 import sc.eidolon.nativeapp.ui.components.CharacterAvatar
 import sc.eidolon.nativeapp.ui.theme.herColors
 
@@ -61,8 +89,10 @@ import sc.eidolon.nativeapp.ui.theme.herColors
 fun CallScreen(
     container: AppContainer,
     characterId: String,
+    conversationId: String,
     onEnd: () -> Unit,
 ) {
+    val context = LocalContext.current
     val baseUrl = container.session.serverUrl.orEmpty()
     val character by produceState(
         initialValue = container.characters.cached(characterId),
@@ -76,20 +106,204 @@ fun CallScreen(
     val person = character
     val her = herColors(person?.color ?: "#7FB4FF")
     var connected by remember { mutableStateOf(false) }
+    var connectedAt by remember { mutableStateOf<Long?>(null) }
+    var callEnded by remember { mutableStateOf(false) }
+    var callError by remember { mutableStateOf<String?>(null) }
+    var maxSeconds by remember { mutableStateOf<Int?>(null) }
     var seconds by remember { mutableIntStateOf(0) }
     var muted by remember { mutableStateOf(false) }
     var speaker by remember { mutableStateOf(true) }
-
-    BackHandler { onEnd() }
-    LaunchedEffect(Unit) {
-        delay(1_800)
-        connected = true
+    var hearing by remember { mutableStateOf("") }
+    val jaSegments = remember { mutableStateMapOf<Int, String>() }
+    val zhSegments = remember { mutableStateMapOf<Int, String>() }
+    var speaking by remember { mutableStateOf(false) }
+    var mood by remember { mutableStateOf("calm") }
+    var nod by remember { mutableStateOf<String?>(null) }
+    var nodId by remember { mutableIntStateOf(0) }
+    var started by remember { mutableStateOf(false) }
+    val stand = person?.stand
+    // 不是每位角色都配了通话开场白；没有时用她的招呼，至少通话页有一句她的台词。
+    val openerJa = person?.callOpenerJa ?: person?.greetingJa
+    val openerZh = person?.callOpenerZh ?: person?.greetingZh
+    var outfitCards by remember(person?.id) { mutableStateOf<List<OutfitCard>>(emptyList()) }
+    var outfitsLoading by remember(person?.id) { mutableStateOf(false) }
+    var outfitsError by remember(person?.id) { mutableStateOf<String?>(null) }
+    var selectedOutfit by remember(person?.id) { mutableStateOf<Outfit?>(null) }
+    var showOutfits by remember { mutableStateOf(false) }
+    var outfitReload by remember { mutableIntStateOf(0) }
+    val activeOutfit = selectedOutfit ?: stand?.defaultOutfit
+    var standPhase by remember(activeOutfit?.url) {
+        mutableStateOf(StandPhase.Loading)
     }
-    LaunchedEffect(connected) {
+    val standLayout = stand != null && standPhase != StandPhase.Failed
+    val scope = rememberCoroutineScope()
+
+    val controller = remember { container.newCallController() }
+    val listener = remember {
+        object : CallListener {
+            override fun onDialing() {
+                callError = null
+                callEnded = false
+            }
+
+            override fun onConnected(callMaxSeconds: Int?, exempt: Boolean) {
+                connected = true
+                connectedAt = SystemClock.elapsedRealtime()
+                maxSeconds = callMaxSeconds
+                callError = null
+                callEnded = false
+                controller.setSpeaker(speaker)
+                controller.setMuted(muted)
+            }
+
+            override fun onSpeaking(value: Boolean) {
+                speaking = value
+            }
+
+            override fun onHearing(text: String) {
+                hearing = text
+            }
+
+            override fun onEvent(event: CallEvent) {
+                when (event) {
+                    is CallEvent.Delta -> {
+                        val target = if (event.lang == "ja") jaSegments else zhSegments
+                        target[event.segment] = (target[event.segment] ?: "") + event.text
+                    }
+                    is CallEvent.User -> {
+                        hearing = ""
+                        jaSegments.clear()
+                        zhSegments.clear()
+                    }
+                    is CallEvent.Ended -> {
+                        connected = false
+                        speaking = false
+                        callEnded = true
+                        if (event.message.isNotBlank()) callError = event.message
+                    }
+                    is CallEvent.Error -> {
+                        connected = false
+                        speaking = false
+                        callEnded = true
+                        callError = event.message
+                    }
+                    is CallEvent.Emotion -> {
+                        mood = event.emotion
+                        if (event.nod != null) {
+                            nod = event.nod
+                            nodId += 1
+                        } else {
+                            nod = null
+                        }
+                    }
+                }
+            }
+
+            override fun onEnded(message: String?) {
+                connected = false
+                speaking = false
+                callEnded = true
+                if (!message.isNullOrBlank()) callError = message
+            }
+
+            override fun onError(message: String) {
+                connected = false
+                speaking = false
+                callEnded = true
+                callError = message
+            }
+        }
+    }
+    val micPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            if (!started) {
+                started = true
+                controller.start(conversationId, listener)
+            }
+        } else {
+            callError = "需要麦克风权限才能通话。请在系统设置里允许麦克风后重试。"
+            callEnded = true
+        }
+    }
+    LaunchedEffect(conversationId) {
+        if (conversationId.isBlank()) {
+            callError = "没有找到这段对话"
+            callEnded = true
+            return@LaunchedEffect
+        }
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            if (!started) {
+                started = true
+                controller.start(conversationId, listener)
+            }
+        } else {
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { controller.close() }
+    }
+
+    val done = {
+        scope.launch { controller.hangUp() }
+        onEnd()
+    }
+
+    val latestJa = jaSegments.keys.maxOrNull()?.let { jaSegments[it] }
+    val latestZh = zhSegments.keys.maxOrNull()?.let { zhSegments[it] }
+    val shownJa = latestJa ?: openerJa
+    val shownZh = if (latestJa != null) latestZh else openerZh
+    val statusLabel = when {
+        connected -> "通话中"
+        callEnded && connectedAt != null -> "通话已结束"
+        callEnded -> "未能接通"
+        else -> "正在呼叫…"
+    }
+    val statusDetail = when {
+        connected -> buildString {
+            append(formatCallTime(seconds))
+            maxSeconds?.let { append(" / ").append(formatCallTime(it)) }
+        }
+        callEnded -> "已结束"
+        else -> "正在接通……"
+    }
+
+    LaunchedEffect(person?.id, stand?.outfitsUrl, outfitReload) {
+        val current = person ?: return@LaunchedEffect
+        val myStand = current.stand ?: return@LaunchedEffect
+        selectedOutfit = myStand.defaultOutfit
+        if (myStand.outfitsUrl == null) return@LaunchedEffect
+        outfitsLoading = true
+        outfitsError = null
+        try {
+            val cards = container.outfits.list(myStand)
+            outfitCards = cards
+            val userId = container.preferences.userId()
+            val saved = userId?.let { container.outfitStore.load(it, current.id) }
+            selectedOutfit = cards.asSequence()
+                .flatMap { it.outfits }
+                .firstOrNull { it.id == saved }
+                ?: myStand.defaultOutfit
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            outfitsError = error.message ?: "衣装列表加载失败"
+        } finally {
+            outfitsLoading = false
+        }
+    }
+
+    BackHandler { done() }
+    LaunchedEffect(connected, connectedAt) {
         if (!connected) return@LaunchedEffect
+        val at = connectedAt ?: return@LaunchedEffect
         while (true) {
-            delay(1_000)
-            seconds += 1
+            seconds = ((SystemClock.elapsedRealtime() - at) / 1_000).toInt()
+            delay(250)
         }
     }
 
@@ -112,13 +326,31 @@ fun CallScreen(
                     ),
             )
         }
+        if (activeOutfit != null && standPhase != StandPhase.Failed) {
+            key(activeOutfit.url) {
+                SpineStand(
+                    outfit = activeOutfit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.80f)
+                        .align(Alignment.BottomCenter),
+                    speaking = speaking,
+                    mood = mood,
+                    nod = nod,
+                    nodId = nodId,
+                    onPhase = { phase ->
+                        if (phase != StandPhase.Loading) standPhase = phase
+                    },
+                )
+            }
+        }
         Box(
             Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color.Black.copy(alpha = 0.45f),
+                            Color.Black.copy(alpha = if (standLayout) 0.28f else 0.45f),
                             Color.Transparent,
                             Color(0xFF05070B).copy(alpha = 0.96f),
                         ),
@@ -130,96 +362,391 @@ fun CallScreen(
             modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(100.dp),
-                    color = Color.Black.copy(alpha = 0.28f),
-                ) {
-                    Text(
-                        text = if (connected) "通话中" else "正在呼叫…",
-                        color = Color.White.copy(alpha = 0.82f),
-                        style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                    )
-                }
-            }
-            Spacer(Modifier.weight(1f))
-            PulsingAvatar(person, her.mark, connected, baseUrl)
-            Spacer(Modifier.height(24.dp))
-            Text(
-                text = person?.name ?: "通话",
-                color = Color.White,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = if (connected) formatCallTime(seconds) else "正在接通……",
-                color = Color.White.copy(alpha = 0.8f),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "语音尚未接入，当前为界面预览",
-                color = Color.White.copy(alpha = 0.55f),
-                style = MaterialTheme.typography.labelSmall,
-            )
-            Spacer(Modifier.height(20.dp))
-            AnimatedVisibility(visible = connected && person?.callOpenerJa != null, enter = fadeIn(tween(300))) {
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = Color.Black.copy(alpha = 0.42f),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
+            Box(Modifier.fillMaxWidth()) {
+                CallStatusPill(statusLabel)
+                if (stand != null) {
+                    Surface(
+                        onClick = { showOutfits = true },
+                        shape = CircleShape,
+                        color = Color.Black.copy(alpha = 0.28f),
+                        modifier = Modifier.align(Alignment.CenterEnd).size(38.dp),
                     ) {
-                        Text(
-                            text = person?.callOpenerJa.orEmpty(),
-                            color = Color.White,
-                            style = MaterialTheme.typography.bodyLarge,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth(),
+                        Icon(
+                            imageVector = Icons.Outlined.Checkroom,
+                            contentDescription = "更换衣装",
+                            tint = Color.White.copy(alpha = 0.9f),
+                            modifier = Modifier.padding(8.dp),
                         )
-                        person?.callOpenerZh?.takeIf { it.isNotBlank() }?.let {
-                            Text(
-                                text = it,
-                                color = Color.White.copy(alpha = 0.65f),
-                                style = MaterialTheme.typography.bodySmall,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
                     }
                 }
             }
-            Spacer(Modifier.weight(1f))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CallControl(
-                    icon = if (muted) Icons.Outlined.MicOff else Icons.Outlined.Mic,
-                    label = if (muted) "已静音" else "静音",
-                    active = muted,
-                    onClick = { muted = !muted },
+            if (standLayout) {
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = person?.name ?: "通话",
+                    color = Color.White,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
                 )
-                HangUpControl(onClick = onEnd)
-                CallControl(
-                    icon = if (speaker) Icons.Outlined.VolumeUp else Icons.Outlined.VolumeOff,
-                    label = "免提",
-                    active = speaker,
-                    onClick = { speaker = !speaker },
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = statusDetail,
+                    color = Color.White.copy(alpha = 0.8f),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = "WebRTC 语音通话",
+                    color = Color.White.copy(alpha = 0.55f),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Spacer(Modifier.weight(1f))
+                // 立绘还没到时先显示头像，到了之后淡入立绘、头像退场。
+                if (standPhase != StandPhase.Ready) {
+                    PulsingAvatar(person, her.mark, connected, baseUrl)
+                }
+                Spacer(Modifier.weight(1f))
+                CallOpener(shownJa, shownZh, connected, hearing, callError)
+                Spacer(Modifier.height(16.dp))
+                CallControls(
+                    muted = muted,
+                    speaker = speaker,
+                    onMute = { muted = !muted; controller.setMuted(muted) },
+                    onSpeaker = { speaker = !speaker; controller.setSpeaker(speaker) },
+                    onEnd = done,
+                )
+                Spacer(Modifier.height(24.dp))
+            } else {
+                Spacer(Modifier.weight(1f))
+                PulsingAvatar(person, her.mark, connected, baseUrl)
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    text = person?.name ?: "通话",
+                    color = Color.White,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = statusDetail,
+                    color = Color.White.copy(alpha = 0.8f),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "WebRTC 语音通话",
+                    color = Color.White.copy(alpha = 0.55f),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Spacer(Modifier.height(20.dp))
+                CallOpener(shownJa, shownZh, connected, hearing, callError)
+                Spacer(Modifier.weight(1f))
+                CallControls(
+                    muted = muted,
+                    speaker = speaker,
+                    onMute = { muted = !muted; controller.setMuted(muted) },
+                    onSpeaker = { speaker = !speaker; controller.setSpeaker(speaker) },
+                    onEnd = done,
+                )
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+
+    if (showOutfits) {
+        OutfitSheet(
+            characterName = person?.name.orEmpty(),
+            cards = outfitCards,
+            loading = outfitsLoading,
+            error = outfitsError,
+            selected = activeOutfit,
+            accent = her.mark,
+            onSelect = { outfit ->
+                selectedOutfit = outfit
+                showOutfits = false
+                val currentId = person?.id
+                if (currentId != null) {
+                    scope.launch {
+                        val userId = container.preferences.userId() ?: return@launch
+                        container.outfitStore.save(userId, currentId, outfit.id)
+                    }
+                }
+            },
+            onRetry = { outfitReload += 1 },
+            onDismiss = { showOutfits = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OutfitSheet(
+    characterName: String,
+    cards: List<OutfitCard>,
+    loading: Boolean,
+    error: String?,
+    selected: Outfit?,
+    accent: Color,
+    onSelect: (Outfit) -> Unit,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val listState = rememberLazyListState()
+    LaunchedEffect(cards, selected?.id) {
+        val index = cards.indexOfFirst { card ->
+            card.outfits.any { it.id == selected?.id }
+        }
+        if (index > 0) listState.scrollToItem(index)
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color(0xFF12151C),
+        contentColor = Color.White,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+        ) {
+            Text(
+                text = "衣装",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (characterName.isNotBlank()) {
+                Text(
+                    text = characterName,
+                    color = Color.White.copy(alpha = 0.6f),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
+            when {
+                loading -> Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    CircularProgressIndicator(color = accent, strokeWidth = 2.dp)
+                }
+
+                error != null -> Column(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = error,
+                        color = Color.White.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                    )
+                    TextButton(onClick = onRetry) { Text("重试", color = accent) }
+                }
+
+                cards.isEmpty() -> Text(
+                    text = "暂时没有更多衣装",
+                    color = Color.White.copy(alpha = 0.6f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(vertical = 24.dp),
+                )
+
+                else -> LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    items(cards, key = { it.id }) { card ->
+                        OutfitCardRow(card, selected, accent, onSelect)
+                    }
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun OutfitCardRow(
+    card: OutfitCard,
+    selected: Outfit?,
+    accent: Color,
+    onSelect: (Outfit) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = card.name.ifBlank { card.id },
+            color = Color.White.copy(alpha = 0.88f),
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            card.everyday?.let { OutfitTile(it, "私服", it.id == selected?.id, accent, onSelect) }
+            card.stage?.let { OutfitTile(it, "演出服", it.id == selected?.id, accent, onSelect) }
+        }
+    }
+}
+
+@Composable
+private fun OutfitTile(
+    outfit: Outfit,
+    label: String,
+    isSelected: Boolean,
+    accent: Color,
+    onSelect: (Outfit) -> Unit,
+) {
+    Column(
+        modifier = Modifier.width(96.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Surface(
+            onClick = { onSelect(outfit) },
+            shape = RoundedCornerShape(12.dp),
+            color = Color.White.copy(alpha = 0.06f),
+            border = BorderStroke(
+                width = if (isSelected) 2.dp else 1.dp,
+                color = if (isSelected) accent else Color.White.copy(alpha = 0.12f),
+            ),
+        ) {
+            Box(
+                modifier = Modifier.width(92.dp).height(116.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (outfit.thumbnail != null) {
+                    AsyncImage(
+                        model = outfit.thumbnail,
+                        contentDescription = label,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Text(
+                        text = "无预览",
+                        color = Color.White.copy(alpha = 0.35f),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = label,
+            color = if (isSelected) accent else Color.White.copy(alpha = 0.65f),
+            style = MaterialTheme.typography.labelSmall,
+        )
+    }
+}
+
+@Composable
+private fun CallStatusPill(label: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(100.dp),
+            color = Color.Black.copy(alpha = 0.28f),
+        ) {
+            Text(
+                text = label,
+                color = Color.White.copy(alpha = 0.82f),
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CallOpener(
+    ja: String?,
+    zh: String?,
+    connected: Boolean,
+    hearing: String,
+    error: String?,
+) {
+    val visible = connected || error != null
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(300)),
+    ) {
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = Color.Black.copy(alpha = 0.42f),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (error != null) {
+                    Text(
+                        text = error,
+                        color = Color(0xFFFFB4AB),
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    Text(
+                        text = ja.orEmpty(),
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    zh?.takeIf { it.isNotBlank() }?.let {
+                        Text(
+                            text = it,
+                            color = Color.White.copy(alpha = 0.65f),
+                            style = MaterialTheme.typography.bodySmall,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+                hearing.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        text = "听到：$it",
+                        color = Color.White.copy(alpha = 0.55f),
+                        style = MaterialTheme.typography.labelSmall,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CallControls(
+    muted: Boolean,
+    speaker: Boolean,
+    onMute: () -> Unit,
+    onSpeaker: () -> Unit,
+    onEnd: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CallControl(
+            icon = if (muted) Icons.Outlined.MicOff else Icons.Outlined.Mic,
+            label = if (muted) "已静音" else "静音",
+            active = muted,
+            onClick = onMute,
+        )
+        HangUpControl(onClick = onEnd)
+        CallControl(
+            icon = if (speaker) Icons.Outlined.VolumeUp else Icons.Outlined.VolumeOff,
+            label = "免提",
+            active = speaker,
+            onClick = onSpeaker,
+        )
     }
 }
 

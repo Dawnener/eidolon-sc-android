@@ -233,7 +233,9 @@ fun MainScaffold(container: AppContainer, account: Account) {
                         onBack = { nav.popBackStack() },
                         onOpenSettings = { nav.navigate(Routes.OwnKeys) },
                         onOpenGifts = { id -> nav.navigate(Routes.gifts(id)) },
-                        onOpenCall = { id -> nav.navigate(Routes.call(id)) },
+                        onOpenCall = { id, conversationId ->
+                            nav.navigate(Routes.call(id, conversationId))
+                        },
                     )
                 }
                 composable(
@@ -246,6 +248,7 @@ fun MainScaffold(container: AppContainer, account: Account) {
                     CallScreen(
                         container = container,
                         characterId = entry.arguments?.getString("characterId").orEmpty(),
+                        conversationId = entry.arguments?.getString("conversationId").orEmpty(),
                         onEnd = { nav.popBackStack() },
                     )
                 }

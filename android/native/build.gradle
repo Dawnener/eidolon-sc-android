@@ -78,6 +78,8 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-viewmodel-savedstate:2.9.1'
     implementation 'androidx.navigation:navigation-compose:2.9.0'
     implementation 'androidx.core:core-ktx:1.16.0'
+    implementation 'androidx.webkit:webkit:1.12.1'
+    implementation 'ai.pipecat:small-webrtc-transport:1.1.0'
 
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1'

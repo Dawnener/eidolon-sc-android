@@ -114,6 +114,19 @@ object OwnKeysRules {
         return OwnKeysRequest(llm = llm, memoryLlm = memory, image = keys.image)
     }
 
+    /** 通话只用 LLM、TTS 和 STT；后台模型和生图不参与。 */
+    fun callOnly(keys: OwnKeysRequest?): OwnKeysRequest? {
+        if (keys == null) return null
+        val call = OwnKeysRequest(llm = keys.llm, tts = keys.tts, stt = keys.stt)
+        return if (callServices(call).isEmpty()) null else call
+    }
+
+    fun callServices(keys: OwnKeysRequest?): List<String> = buildList {
+        if (keys?.llm != null) add("llm")
+        if (keys?.tts != null) add("tts")
+        if (keys?.stt != null) add("stt")
+    }
+
     fun deleteLlm(keys: OwnKeysRequest): OwnKeysRequest = keys.copy(llm = null, memoryLlm = null)
 
     fun encode(keys: OwnKeysRequest): String = EidolonJson.encodeToString(OwnKeysRequest.serializer(), keys)

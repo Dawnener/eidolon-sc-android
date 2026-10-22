@@ -27,6 +27,9 @@ class PreferencesStore(
 
         fun ownKeys(authority: String, userId: String) =
             stringPreferencesKey("own_keys.$authority.$userId")
+
+        fun outfit(authority: String, userId: String, characterId: String) =
+            stringPreferencesKey("outfit.$authority.$userId.$characterId")
     }
 
     suspend fun serverUrl(): String? = context.eidolonDataStore.data.first()[Keys.serverUrl]
@@ -62,8 +65,22 @@ class PreferencesStore(
         }
     }
 
-    suspend fun ownKeys(authority: String, userId: String): OwnKeysRequest? {
-        val key = Keys.ownKeys(authority, userId)
+    suspend fun outfit(authority: String, userId: String, characterId: String): String? =
+        context.eidolonDataStore.data.first()[Keys.outfit(authority, userId, characterId)]
+
+    suspend fun setOutfit(
+        authority: String,
+        userId: String,
+        characterId: String,
+        outfitId: String?,
+    ) {
+        context.eidolonDataStore.edit { prefs ->
+            val key = Keys.outfit(authority, userId, characterId)
+            if (outfitId == null) prefs.remove(key) else prefs[key] = outfitId
+        }
+    }
+
+    suspend fun ownKeys(authority: String, userId: String): OwnKeysRequest? {        val key = Keys.ownKeys(authority, userId)
         val ciphertext = context.eidolonDataStore.data.first()[key] ?: return null
         val json = secure.decrypt(ciphertext)
         if (json == null) {

@@ -18,6 +18,44 @@ data class Character(
     val backgroundUrl: String? = null,
     val callOpenerJa: String? = null,
     val callOpenerZh: String? = null,
+    val greetingJa: String? = null,
+    val greetingZh: String? = null,
+    val stand: Stand? = null,
+)
+
+/** Her Spine stand on the call screen; null when this deployment does not serve stands. */
+data class Stand(val defaultOutfit: Outfit, val outfitsUrl: String? = null)
+
+/** One outfit: the directory holding `data.json`, `data.atlas` and its texture. */
+data class Outfit(
+    val id: String,
+    val url: String,
+    val thumbnail: String? = null,
+)
+
+/** One card and the outfits it offers; a card may have only one of the two. */
+data class OutfitCard(
+    val id: String,
+    val name: String,
+    val type: String,
+    val everyday: Outfit? = null,
+    val stage: Outfit? = null,
+) {
+    val outfits: List<Outfit>
+        get() = listOfNotNull(everyday, stage)
+}
+
+/** WebRTC setup from `/api/ice-servers`, before a call. */
+data class CallSetup(
+    val iceServers: List<CallIceServer> = emptyList(),
+    val maxCallSeconds: Int? = null,
+    val callExempt: Boolean = false,
+)
+
+data class CallIceServer(
+    val urls: List<String>,
+    val username: String? = null,
+    val credential: String? = null,
 )
 
 data class Segment(val ja: String, val zh: String)

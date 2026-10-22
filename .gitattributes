@@ -8,3 +8,6 @@
 *.jar binary
 # Spine runtime 原样保存（ADR-0009），换行符转换会改变校验和
 frontend/public/vendor/spine-3.6/** -text
+# 原生 App 里是同一份 runtime 的副本，也必须保持字节一致（ADR-0009）
+android/native/src/main/assets/stand/spine-webgl.js -text
+android/native/src/main/assets/stand/LICENSE -text

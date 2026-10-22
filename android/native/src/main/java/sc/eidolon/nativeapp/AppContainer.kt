@@ -12,6 +12,7 @@ import sc.eidolon.nativeapp.data.api.HttpFactory
 import sc.eidolon.nativeapp.data.local.AccessStore
 import sc.eidolon.nativeapp.data.local.CookieStore
 import sc.eidolon.nativeapp.data.local.OwnKeysStore
+import sc.eidolon.nativeapp.data.local.OutfitStore
 import sc.eidolon.nativeapp.data.local.PreferencesStore
 import sc.eidolon.nativeapp.data.local.SecureStore
 import sc.eidolon.nativeapp.data.local.ServerState
@@ -20,9 +21,11 @@ import sc.eidolon.nativeapp.data.repo.CharacterRepository
 import sc.eidolon.nativeapp.data.repo.ConversationRepository
 import sc.eidolon.nativeapp.data.repo.GiftsRepository
 import sc.eidolon.nativeapp.data.repo.MemoryRepository
+import sc.eidolon.nativeapp.data.repo.OutfitRepository
 import sc.eidolon.nativeapp.push.PushController
 import sc.eidolon.nativeapp.push.PushNotifier
 import sc.eidolon.nativeapp.session.SessionController
+import sc.eidolon.nativeapp.ui.call.CallController
 
 class AppContainer(context: Context) {
     private val appContext = context.applicationContext
@@ -46,11 +49,24 @@ class AppContainer(context: Context) {
     )
     val api = EidolonApi(http, { serverState.url })
     val ownKeysStore = OwnKeysStore(preferences, serverState)
+    val outfitStore = OutfitStore(preferences, serverState)
     val characters = CharacterRepository(api)
+    val outfits = OutfitRepository(api)
     val conversations = ConversationRepository(api)
     val memories = MemoryRepository(api)
     val gifts = GiftsRepository(api)
     val session = SessionController(api, serverStore, preferences, cookieStore, ownKeysStore, serverState)
+
+    fun newCallController(): CallController = CallController(
+        context = appContext,
+        api = api,
+        prefs = preferences,
+        ownKeys = ownKeysStore,
+        cookies = cookieStore,
+        serverState = serverState,
+        access = accessStore,
+    )
+
     val pushNotifier = PushNotifier(appContext)
     val push = PushController(appContext, session, preferences)
     val pendingChat = MutableStateFlow<String?>(null)

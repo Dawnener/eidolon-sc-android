@@ -133,7 +133,7 @@ fun ChatScreen(
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenGifts: (String) -> Unit,
-    onOpenCall: (String) -> Unit,
+    onOpenCall: (String, String) -> Unit,
 ) {
     val vm: ChatViewModel = viewModel(
         key = characterId,
@@ -256,8 +256,11 @@ fun ChatScreen(
                 },
                 actions = {
                     if (actionsReady) {
-                        if (viewing == null && !state.ended && !cooling && state.character != null) {
-                            IconButton(onClick = { onOpenCall(characterId) }) {
+                        val conversationId = state.conversationId
+                        if (viewing == null && !state.ended && !cooling &&
+                            state.character != null && conversationId != null
+                        ) {
+                            IconButton(onClick = { onOpenCall(characterId, conversationId) }) {
                                 Icon(Icons.Outlined.Call, contentDescription = "语音通话")
                             }
                         }

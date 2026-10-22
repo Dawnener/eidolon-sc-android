@@ -7,11 +7,15 @@ import sc.eidolon.nativeapp.model.Account
 import sc.eidolon.nativeapp.model.AffinityChange
 import sc.eidolon.nativeapp.model.AffinityStatus
 import sc.eidolon.nativeapp.model.Character
+import sc.eidolon.nativeapp.model.CallIceServer
+import sc.eidolon.nativeapp.model.CallSetup
 import sc.eidolon.nativeapp.model.Conversation
 import sc.eidolon.nativeapp.model.EventKind
 import sc.eidolon.nativeapp.model.LastPreview
 import sc.eidolon.nativeapp.model.LatestConversation
 import sc.eidolon.nativeapp.model.Memory
+import sc.eidolon.nativeapp.model.Outfit
+import sc.eidolon.nativeapp.model.OutfitCard
 import sc.eidolon.nativeapp.model.OwnKeysRequest
 import sc.eidolon.nativeapp.model.Photo
 import sc.eidolon.nativeapp.model.PhotoStatus
@@ -20,6 +24,7 @@ import sc.eidolon.nativeapp.model.Recorded
 import sc.eidolon.nativeapp.model.ReachOutModel
 import sc.eidolon.nativeapp.model.Segment
 import sc.eidolon.nativeapp.model.SignInMethod
+import sc.eidolon.nativeapp.model.Stand
 import sc.eidolon.nativeapp.model.Stats
 import sc.eidolon.nativeapp.model.StatsAchievements
 import sc.eidolon.nativeapp.model.StatsCalls
@@ -30,6 +35,7 @@ import sc.eidolon.nativeapp.model.StatsRange
 import sc.eidolon.nativeapp.model.StatsTier
 import sc.eidolon.nativeapp.model.StatsVisits
 import sc.eidolon.nativeapp.model.CharacterStats
+import java.net.URI
 import java.time.Instant
 
 @Serializable
@@ -146,6 +152,8 @@ data class CharacterDto(
     @SerialName("avatar_url") val avatarUrl: String? = null,
     @SerialName("background_url") val backgroundUrl: String? = null,
     @SerialName("call_opener") val callOpener: ScriptedLineDto? = null,
+    val greeting: ScriptedLineDto? = null,
+    val stand: StandDto? = null,
     @SerialName("name_zh") val nameZh: String? = null,
     @SerialName("name_kana") val nameKana: String? = null,
     @SerialName("name_romaji") val nameRomaji: String? = null,
@@ -159,6 +167,54 @@ data class CharacterDto(
 data class ScriptedLineDto(
     val ja: String,
     val subtitle: String? = null,
+)
+
+@Serializable
+data class StandDto(
+    @SerialName("default_outfit") val defaultOutfit: OutfitDto,
+    @SerialName("outfits_url") val outfitsUrl: String? = null,
+)
+
+@Serializable
+data class OutfitDto(
+    val id: String,
+    val url: String,
+    val thumbnail: String? = null,
+)
+
+@Serializable
+data class OutfitListDto(
+    @SerialName("idol_id") val idolId: Int? = null,
+    val cards: List<OutfitCardDto> = emptyList(),
+)
+
+@Serializable
+data class OutfitCardDto(
+    val id: String,
+    val name: String = "",
+    val type: String = "",
+    val everyday: OutfitDto? = null,
+    val stage: OutfitDto? = null,
+)
+
+@Serializable
+data class CallIceServerDto(
+    val urls: List<String> = emptyList(),
+    val username: String? = null,
+    val credential: String? = null,
+)
+
+@Serializable
+data class CallSetupDto(
+    val iceServers: List<CallIceServerDto> = emptyList(),
+    val maxCallSeconds: Int? = null,
+    val callExempt: Boolean = false,
+)
+
+fun CallSetupDto.toDomain(): CallSetup = CallSetup(
+    iceServers = iceServers.map { CallIceServer(it.urls, it.username, it.credential) },
+    maxCallSeconds = maxCallSeconds,
+    callExempt = callExempt,
 )
 
 @Serializable
@@ -307,7 +363,35 @@ fun CharacterDto.toDomain(): Character = Character(
     backgroundUrl = backgroundUrl,
     callOpenerJa = callOpener?.ja,
     callOpenerZh = callOpener?.subtitle,
+    greetingJa = greeting?.ja,
+    greetingZh = greeting?.subtitle,
+    stand = stand?.toDomain(),
 )
+
+fun StandDto.toDomain(): Stand = Stand(
+    defaultOutfit = defaultOutfit.toDomain(),
+    outfitsUrl = outfitsUrl,
+)
+
+fun OutfitDto.toDomain(): Outfit = Outfit(id = id, url = url, thumbnail = thumbnail)
+
+/** Resolve the list's relative outfit/thumbnail paths against the list's own address. */
+fun OutfitListDto.toDomain(listUrl: String): List<OutfitCard> {
+    fun OutfitDto.resolved(): Outfit = Outfit(
+        id = id,
+        url = URI(listUrl).resolve(url).toString(),
+        thumbnail = thumbnail?.let { URI(listUrl).resolve(it).toString() },
+    )
+    return cards.map { card ->
+        OutfitCard(
+            id = card.id,
+            name = card.name,
+            type = card.type,
+            everyday = card.everyday?.resolved(),
+            stage = card.stage?.resolved(),
+        )
+    }
+}
 
 fun AffinityDto.toDomain(): AffinityChange = AffinityChange(
     up = up,
