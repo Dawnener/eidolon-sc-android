@@ -253,6 +253,18 @@ fun ChatScreen(
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
+                                text = { Text("新对话") },
+                                enabled = !state.busy &&
+                                    state.log.entries.isNotEmpty() &&
+                                    !state.loading,
+                                onClick = {
+                                    menuOpen = false
+                                    showHistory = false
+                                    if (viewing != null) vm.backToCurrent()
+                                    vm.newConversation()
+                                },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("历史对话") },
                                 onClick = {
                                     menuOpen = false
