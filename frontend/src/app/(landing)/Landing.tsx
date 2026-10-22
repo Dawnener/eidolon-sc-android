@@ -23,7 +23,7 @@ const t = copy.landing;
  * 棱镜、散成一道道印象色（LightStage 加 OGL 光层，静态档是 StaticLight 的 SVG）；第 2 幕沿着光谱
  * 横向走过各个组合（Spectrum）；第 3 幕她说日语、第 4 幕她打来电话（Voice）；第 5 幕 3D 的夜空里，一件事从
  * 一位偶像传到另一位（Memory，three.js 的场景由 LightStage 加载）；第 6 幕安静的诚实事项、第 7 幕光汇聚成入口（Closing）；左侧的幕名轨（Rail）、
- * 右上角的仓库链接和入口，以及页脚。各幕的元素用 `data-lp-act` 标出它是第几幕，静止版式的幕名轨按它
+ * 右上角的仓库链接和下载入口，以及页脚。各幕的元素用 `data-lp-act` 标出它是第几幕，静止版式的幕名轨按它
  * 跟着滚动走。
  *
  * 页面按时间线（model/timeline.ts）分成几段，每段用 `data-lp-section` 标出它是第几段；钉住的一段高度
@@ -50,7 +50,7 @@ export function Landing({
   const lights = lightsOf(spectrum);
   const timeline = timelineOf(spectrum.units.length);
   const builtActs = new Set(timeline.acts.map((a) => a.act));
-  const entryLabel = isSignedIn ? t.continue : t.signIn;
+  const entryLabel = isSignedIn ? t.continue : t.downloadApp;
   const sectionOf = (act: number) => timeline.sections.find((s) => s.acts.includes(act))!;
   const units = unitsOf(spectrum, characters);
   const speaker = speakerOf(units, characters);

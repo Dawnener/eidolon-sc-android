@@ -104,5 +104,5 @@ export function japaneseText(): string {
  * 重新生成时，那几个字会从完整子集里取，字体对、只是晚一点到，覆盖契约测试同样会拦。
  */
 export function act0Text(): string {
-  return unique([copy.app.name, copy.app.description, copy.landing.disclaimer, copy.app.repositoryLabel, copy.landing.signIn, copy.landing.continue]);
+  return unique([copy.app.name, copy.app.description, copy.landing.disclaimer, copy.app.repositoryLabel, copy.landing.downloadApp, copy.landing.continue]);
 }

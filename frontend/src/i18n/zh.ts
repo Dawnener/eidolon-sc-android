@@ -421,6 +421,10 @@ export const zh = {
   },
   login: {
     lede: "和《偶像大师 闪耀色彩》283 事务所的偶像们打电话、说话。她们会用自己的声音回答你，记得原作里和制作人一起走过的事，也会记住你告诉她们的事。",
+    downloadTitle: "在手机上使用",
+    downloadHint: "安装 Android App，用 GitHub 登录后就可以挑一位偶像，和她聊天、打电话。",
+    download: "下载 Android App",
+    webSignIn: "网页版登录 / 管理后台",
     signInRegion: "登录",
     signInWith: (provider: string) => `用 ${provider} 登录`,
     noProviders: "部署者还没有配置登录方式。",
@@ -436,6 +440,7 @@ export const zh = {
   landing: {
     disclaimer: "非官方粉丝作品，角色由 AI 扮演。",
     signIn: "登录",
+    downloadApp: "下载 App",
     continue: "继续",
     panelTitle: "登录",
     devSignIn: "开发登录",
@@ -527,15 +532,15 @@ export const zh = {
       ownKey: "支持 BYOK（自带密钥），密钥只保存于本地",
       memories: "记忆可查看&删除，管理者无法查看",
       affinity: "你的话语会影响她们对你的态度，切勿过于冒犯……",
-      signIn: (providers: string) => `现支持 ${providers} 登录`,
-      noSignIn: "暂时还不能登录。",
+      signIn: (providers: string) => `App 内支持 ${providers} 登录`,
+      noSignIn: "App 的登录暂时不可用。",
       /** 几种登录方式之间的连接词。 */
       or: "/",
     },
     /** 第 7 幕「开始」：每位角色一道光，收拢成一块手机屏幕的白光，出现行动按钮。 */
     act7: {
       title: "她们在屏幕的另一边。",
-      body: "登录以后，挑一位偶像，和她说说话。",
+      body: "下载 App，挑一位偶像，和她说说话。",
     },
   },
   consent: {

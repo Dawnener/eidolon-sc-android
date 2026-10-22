@@ -9,7 +9,7 @@ import { SignInChoices } from "@/components/app/SignInChoices";
 import { SectionHeading } from "@/components/app/SubpageHeader";
 import { LegalFooter } from "@/components/LegalFooter";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { copy } from "@/i18n";
 import {
@@ -19,13 +19,14 @@ import {
   type Character,
   type SignInOptions,
 } from "@/lib/api";
+import { APP_DOWNLOAD_URL } from "@/lib/appDownload";
 import { toFailure, type Failure } from "@/lib/failure";
 import { signInFailure } from "@/lib/signIn";
 import { FailureIcon } from "@/theme/icons";
 
 const t = copy.login;
 
-/** 登录页：登录被拒时后端带着 `?error=` 回到这里，开发登录也在这里，也可以直接访问。访客平常在落地页的登录面板登录。 */
+/** 登录页：主入口是下载 Android App。登录被拒时后端带着 `?error=` 回到这里；网页登录收在折叠区，留给管理后台和异常处理。 */
 export default function LoginPage() {
   const [options, setOptions] = useState<SignInOptions | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -70,24 +71,38 @@ export default function LoginPage() {
           </Alert>
         )}
 
-        <SignInChoices options={options} className="max-w-90" />
+        {/* 网页版的主入口改成下载 App；网页登录收进下面，留给管理后台和登录异常处理。 */}
+        <section className="flex max-w-90 flex-col gap-3">
+          <h2 className="text-list-title">{t.downloadTitle}</h2>
+          <p className="text-body text-muted-foreground">{t.downloadHint}</p>
+          <a href={APP_DOWNLOAD_URL} download className={buttonVariants({ size: "lg" })}>
+            {t.download}
+          </a>
+        </section>
 
-        {options?.dev_login && (
-          <form onSubmit={submit} className="flex max-w-90 flex-col gap-3">
-            <div className="flex flex-col gap-1">
-              <SectionHeading>{t.devTitle}</SectionHeading>
-              <p className="text-body text-muted-foreground">{t.devHint}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Input aria-label={t.devName} value={name} onChange={(e) => setName(e.target.value)} className="flex-1" />
-              <Button type="submit" disabled={!name.trim()}>
-                {t.devSubmit}
-              </Button>
-            </div>
-          </form>
-        )}
+        <details className="max-w-90">
+          <summary className="cursor-pointer text-body text-muted-foreground">{t.webSignIn}</summary>
+          <div className="mt-4 flex flex-col gap-4">
+            <SignInChoices options={options} />
 
-        {failure && <FailureNotice failure={failure} />}
+            {options?.dev_login && (
+              <form onSubmit={submit} className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <SectionHeading>{t.devTitle}</SectionHeading>
+                  <p className="text-body text-muted-foreground">{t.devHint}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input aria-label={t.devName} value={name} onChange={(e) => setName(e.target.value)} className="flex-1" />
+                  <Button type="submit" disabled={!name.trim()}>
+                    {t.devSubmit}
+                  </Button>
+                </div>
+              </form>
+            )}
+
+            {failure && <FailureNotice failure={failure} />}
+          </div>
+        </details>
 
         {characters.length > 0 && (
           <section className="flex flex-col gap-2">

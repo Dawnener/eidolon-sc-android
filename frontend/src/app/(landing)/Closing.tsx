@@ -32,7 +32,7 @@ export function Honesty({ section, title, lines }: { section: Section; title: st
 
 /**
  * 第 7 幕「开始」：28 道光收拢成一块手机屏幕的白光（光层画；静止版式、光层没起来时由 CSS 画出汇聚后的
- * 那块白光），然后出现行动按钮：访客点了在落地页里弹出登录面板，已登录的是「继续」，回到对话列表。
+ * 那块白光），然后出现行动按钮：访客点了下载 Android App，已登录的是「继续」，回到对话列表。
  * 运动版式里文字和按钮跟着模型淡入（--lp-act7，由 LightStage 写）。
  */
 export function Start({
