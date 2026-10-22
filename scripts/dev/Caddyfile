@@ -21,7 +21,8 @@
 	redir @plaintext https://{host}{uri} 308
 
 	# Cloudflare Access 在边缘校验身份，但静态资源仍可能被边缘缓存；明确 no-store。
-	header >Cache-Control "private, no-store"
+	# 立绘路由自己设了可缓存的 Cache-Control，这里只在没有设置时兜底。
+	header ?Cache-Control "private, no-store"
 
 	@apkIndex path /apk /apk/
 	handle @apkIndex {
@@ -59,6 +60,30 @@ HTML
 	handle_path /apk/* {
 		root * {$EIDOLON_APK_DIR:/nonexistent}
 		file_server
+	}
+
+	# 通话立绘：原生 App 用官方 spine runtime 直接从这里取衣装文件，
+	# 页面来源是 appassets.androidplatform.net，所以需要 CORS。
+	# 衣装文件、衣装清单和缩略图在整理目录里分开放，分别映射成存储桶里的三个前缀。
+	handle_path /stand-assets/outfits/* {
+		root * {$EIDOLON_STAND_LISTS_DIR:/nonexistent}
+		file_server
+		header Access-Control-Allow-Origin "*"
+		header Cache-Control "public, max-age=300"
+	}
+
+	handle_path /stand-assets/thumbnails/* {
+		root * {$EIDOLON_STAND_THUMBS_DIR:/nonexistent}
+		file_server
+		header Access-Control-Allow-Origin "*"
+		header Cache-Control "public, max-age=300"
+	}
+
+	handle_path /stand-assets/* {
+		root * {$EIDOLON_STAND_ASSETS_DIR:/nonexistent}
+		file_server
+		header Access-Control-Allow-Origin "*"
+		header Cache-Control "public, max-age=300"
 	}
 
 	# 公网请求要保留浏览器真实的 Origin，公开部署的后端会校验它。

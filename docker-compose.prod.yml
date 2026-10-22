@@ -21,6 +21,11 @@ services:
       EIDOLON_DOMAIN: ${EIDOLON_DOMAIN:?请在 .env 里填写 EIDOLON_DOMAIN}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # 同机托管立绘素材时用；用 OSS/R2/CDN 时这些挂载可以为空。
+      # 衣装文件在 source/assets 下，清单和缩略图在整理目录根下，挂到同一个公开前缀。
+      - ./corpus/stand/source/assets:/srv/stand-assets:ro
+      - ./corpus/stand/outfits:/srv/stand-assets/outfits:ro
+      - ./corpus/stand/thumbnails:/srv/stand-assets/thumbnails:ro
       - caddy-data:/data # 证书
       - caddy-config:/config
     depends_on:
@@ -29,7 +34,7 @@ services:
     logging: *logging
 
   frontend:
-    image: ghcr.io/sallyn0225/eidolon-sc-frontend:${EIDOLON_IMAGE_TAG:-main}
+    image: ${EIDOLON_FRONTEND_IMAGE:-ghcr.io/sallyn0225/eidolon-sc-frontend}:${EIDOLON_IMAGE_TAG:-main}
     build: ./frontend
     network_mode: host
     environment:
@@ -44,7 +49,7 @@ services:
     logging: *logging
 
   backend:
-    image: ghcr.io/sallyn0225/eidolon-sc-backend:${EIDOLON_IMAGE_TAG:-main}
+    image: ${EIDOLON_BACKEND_IMAGE:-ghcr.io/sallyn0225/eidolon-sc-backend}:${EIDOLON_IMAGE_TAG:-main}
     build: ./backend
     network_mode: host
     env_file: .env
@@ -52,8 +57,9 @@ services:
       HOST: 127.0.0.1
       PORT: 8000
       # 浏览器和后端都用本机的 coturn 做 STUN；浏览器另外拿到 TURN 的临时凭据
-      EIDOLON_ICE_SERVERS: ${EIDOLON_ICE_SERVERS:-stun:${EIDOLON_DOMAIN}:3478}
-      EIDOLON_TURN_URLS: turn:${EIDOLON_DOMAIN}:3478?transport=udp,turn:${EIDOLON_DOMAIN}:3478?transport=tcp
+      # TURN 必须直连公网 IP，不能走 Cloudflare 代理域名。
+      EIDOLON_ICE_SERVERS: ${EIDOLON_ICE_SERVERS:-stun:${EIDOLON_PUBLIC_IP}:3478}
+      EIDOLON_TURN_URLS: ${EIDOLON_TURN_URLS:-turn:${EIDOLON_PUBLIC_IP}:3478?transport=udp,turn:${EIDOLON_PUBLIC_IP}:3478?transport=tcp}
       EIDOLON_TURN_SECRET: ${EIDOLON_TURN_SECRET:?请在 .env 里填写 EIDOLON_TURN_SECRET}
     volumes:
       - eidolon-data:/data # 数据库（用户、对话、记忆、剧情库）和同步下载的原始剧本缓存 /data/mirror

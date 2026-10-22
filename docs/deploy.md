@@ -27,6 +27,8 @@
 
 ## 部署
 
+> 2 核 2G、3 Mbps 的阿里云 ECS / VPS 起步配置和清单见 [deploy-ecs.md](deploy-ecs.md)。
+
 ```sh
 git clone <仓库地址> eidolon-sc && cd eidolon-sc
 cp .env.example .env

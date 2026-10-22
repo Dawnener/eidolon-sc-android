@@ -159,7 +159,10 @@ start_caddy() {
     return
   fi
   echo "起 Caddy :8080"
-  start_bg caddy env EIDOLON_APK_DIR="$APK_DIR" EIDOLON_NATIVE_APK_DIR="$NATIVE_APK_DIR" "$CADDY" run \
+  start_bg caddy env EIDOLON_APK_DIR="$APK_DIR" EIDOLON_NATIVE_APK_DIR="$NATIVE_APK_DIR" \
+    EIDOLON_STAND_ASSETS_DIR="$ROOT/corpus/stand/source/assets" \
+    EIDOLON_STAND_LISTS_DIR="$ROOT/corpus/stand/outfits" \
+    EIDOLON_STAND_THUMBS_DIR="$ROOT/corpus/stand/thumbnails" "$CADDY" run \
     --config "$ROOT/scripts/dev/Caddyfile" --adapter caddyfile
   wait_http http://127.0.0.1:8080/ 30 || die "Caddy 没起来，看 $STATE/caddy.log"
 }

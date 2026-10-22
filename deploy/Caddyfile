@@ -16,5 +16,14 @@
 			header Content-Type application/json*
 		}
 	}
+	# 立绘素材和衣装清单：同机托管时由这里提供；素材可能不在服务器上（用 OSS/R2/CDN），
+	# 这时这个路由会 404，前端会自动退回背景图。
+	handle_path /stand-assets/* {
+		root * /srv/stand-assets
+		file_server
+		header Access-Control-Allow-Origin "*"
+		header Cache-Control "public, max-age=300"
+	}
+
 	reverse_proxy 127.0.0.1:3000
 }
