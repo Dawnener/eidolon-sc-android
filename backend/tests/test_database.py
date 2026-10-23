@@ -6,6 +6,7 @@ from pathlib import Path
 
 from eidolon import database
 from eidolon.config import Settings
+from eidolon.data_access import Database
 from eidolon.store import Store
 from tests.conftest import ClientFactory
 from tests.fakes import FakeEmbedder, FakeJudge, FakeLLM, FakeReranker
@@ -34,28 +35,32 @@ def test_connecting_makes_the_directory_the_database_is_in(tmp_path: Path):
     assert path.exists()
 
 
-def test_a_deployments_id_is_made_once_and_kept(tmp_path: Path):
+async def test_a_deployments_id_is_made_once_and_kept(tmp_path: Path):
     path = tmp_path / "eidolon.db"
-    first = Store(path)
+    first_db = Database(path)
+    first = Store(first_db)
     made = first.deployment_id()
-    first.close()
+    await first_db.close()
 
-    again = Store(path)
+    again_db = Database(path)
+    again = Store(again_db)
     try:
         assert again.deployment_id() == made
     finally:
-        again.close()
+        await again_db.close()
     assert made
 
 
-def test_two_deployments_have_different_ids(tmp_path: Path):
-    one = Store(tmp_path / "one.db")
-    two = Store(tmp_path / "two.db")
+async def test_two_deployments_have_different_ids(tmp_path: Path):
+    one_db = Database(tmp_path / "one.db")
+    two_db = Database(tmp_path / "two.db")
+    one = Store(one_db)
+    two = Store(two_db)
     try:
         assert one.deployment_id() != two.deployment_id()
     finally:
-        one.close()
-        two.close()
+        await one_db.close()
+        await two_db.close()
 
 
 async def test_health_reports_the_deployments_stable_id(make_client: ClientFactory):

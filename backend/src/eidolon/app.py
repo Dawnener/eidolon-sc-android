@@ -402,7 +402,7 @@ def create_app(backend: Backend) -> FastAPI:
             )
         except TimeoutError:
             ok = False
-        body = {"ok": ok}
+        body: dict[str, object] = {"ok": ok}
         if ok:
             body["deployment_id"] = store.deployment_id()
         return JSONResponse(body, status_code=200 if ok else 503)

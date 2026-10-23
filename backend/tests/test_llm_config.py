@@ -9,6 +9,8 @@ from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from typing import Any, cast
+
 import httpx
 import pytest
 import uvicorn
@@ -226,11 +228,12 @@ def test_the_server_starts_without_checking_a_chat_model(
     def must_not_check(*_: object) -> None:
         raise AssertionError("checked a chat model that is not configured")
 
-    def stop(app: object, **_: object) -> None:
-        asyncio.run(app.state.backend.aclose())  # pyright: ignore[reportAttributeAccessIssue]
+    def stop(server: uvicorn.Server, **_: object) -> None:
+        app = cast(Any, server.config.app)
+        asyncio.run(app.state.backend.aclose())
 
     monkeypatch.setattr("eidolon.__main__._check_chat_llm", must_not_check)
-    monkeypatch.setattr(uvicorn, "run", stop)
+    monkeypatch.setattr(uvicorn.Server, "run", stop)
 
     code = main(["serve"])
 

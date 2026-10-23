@@ -425,7 +425,7 @@ def add_account_routes(app: FastAPI, backend: Backend) -> None:
         return response
 
     @app.post("/api/auth/mobile/exchange", status_code=204)
-    def exchange_mobile_sign_in(
+    async def exchange_mobile_sign_in(
         body: MobileExchange, request: Request, response: Response
     ) -> None:
         """Take the one-off code from the phone's browser and start the session in its own
@@ -434,12 +434,12 @@ def add_account_routes(app: FastAPI, backend: Backend) -> None:
         if user_id is None:
             raise HTTPException(401, "登录码已失效，请重新登录")
         try:
-            user = store.get_user(user_id)
+            user = await store.get_user(user_id)
         except NotFound:
             raise HTTPException(401, "登录码已失效，请重新登录") from None
         if user.banned_at is not None:
             raise HTTPException(403, "这位用户已被封禁")
-        signed_in(user.id, response, request)
+        await signed_in(user.id, response, request)
 
     @app.post("/api/auth/logout", status_code=204)
     async def logout(request: Request, response: Response) -> None:

@@ -15,7 +15,10 @@ from tests.fakes import FakeLLM
 async def test_the_backend_is_healthy_while_it_reads_the_database(make_client: ClientFactory):
     res = await make_client(FakeLLM(), user=None).get("/api/health")
 
-    assert (res.status_code, res.json()) == (200, {"ok": True})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert body["deployment_id"]
 
 
 async def test_the_backend_is_not_healthy_when_it_cannot_read_the_database(

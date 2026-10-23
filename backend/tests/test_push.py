@@ -66,7 +66,7 @@ async def test_a_reach_out_is_published_to_the_users_open_connection(
     )
     last_contact(settings.database_path, conversation, clock.now - timedelta(hours=28))
     backend = backend_of(client)
-    user = backend.store.first_user_named("producer")
+    user = await backend.store.first_user_named("producer")
     assert user is not None
 
     with backend.pushes.subscribe(user.id) as queue:

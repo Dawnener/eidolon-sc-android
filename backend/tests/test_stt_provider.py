@@ -7,10 +7,10 @@ a user's own key tried on the service they chose before it is kept."""
 import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 import uvicorn
-from fastapi import FastAPI
 from pipecat.services.soniox.stt import SonioxSTTService
 
 import eidolon.__main__
@@ -111,11 +111,12 @@ async def started(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[list[Backend
 
     backends: list[Backend] = []
 
-    def run(app: FastAPI, **_: object) -> None:
+    def run(server: uvicorn.Server, **_: object) -> None:
+        app = cast(Any, server.config.app)
         backends.append(app.state.backend)
 
     monkeypatch.setattr(eidolon.__main__, "_check_chat_llm", chat_model_fit)
-    monkeypatch.setattr(uvicorn, "run", run)
+    monkeypatch.setattr(uvicorn.Server, "run", run)
     yield backends
     for backend in backends:
         await backend.aclose()

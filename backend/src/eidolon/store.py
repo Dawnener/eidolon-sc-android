@@ -533,16 +533,7 @@ class Store:
         restarts and address changes, so clients can tell this deployment from another."""
         if (made := self._deployment_id) is not None:
             return made
-        with self._lock, self._db:
-            # One row only, so two processes first asking at once still settle on one id.
-            self._db.execute(
-                "INSERT OR IGNORE INTO deployment (name, id) VALUES ('deployment', ?)",
-                (uuid.uuid4().hex,),
-            )
-            row = self._db.execute(
-                "SELECT id FROM deployment WHERE name = 'deployment'"
-            ).fetchone()
-            made = str(row["id"])
+        made = self._db.prepare(_deployment_id)
         self._deployment_id = made
         return made
 
@@ -851,6 +842,17 @@ _MESSAGE_WITH_PHOTO = (
 """A message with its photo, if any, but not its picture (`_message_with_photo`)."""
 _EVENT_COLUMNS = "id, kind, created_at, affinity, gift_id, liked"
 _REACH_OUT_COLUMNS = "id, ja, zh, segments, created_at"
+
+def _deployment_id(db: sqlite3.Connection) -> str:
+    """This deployment's id, made once: one row only, so two processes first asking at
+    once still settle on one id."""
+    db.execute(
+        "INSERT OR IGNORE INTO deployment (name, id) VALUES ('deployment', ?)",
+        (uuid.uuid4().hex,),
+    )
+    row = db.execute("SELECT id FROM deployment WHERE name = 'deployment'").fetchone()
+    return str(row[0])
+
 
 def _open(db: sqlite3.Connection) -> None:
     """Make the store's tables, and bring those an older version made up to date."""
