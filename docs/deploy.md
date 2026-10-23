@@ -233,8 +233,8 @@ docker compose -f docker-compose.prod.yml exec backend eidolon eval memory --jso
 | `spine/idols/<stand 或 stand_costume>/<enzaId>/` | 一套衣装的 `data.json`、`data.atlas`、`data.png`，和 ShinyColorsDB 的 CDN 上一样。贴图原样上传：约一半其实是 WebP，只是叫 `.png`，上传时按文件内容标成 `image/webp` |
 | `thumbnails/<stand 或 stand_costume>/<enzaId>.png` | 这套衣装的缩略图：电脑「半身 ADV」的取景，400×500，透明背景 |
 | `outfits/<idol_id>.json` | 这位角色的衣装清单，换衣装面板按它列出衣装 |
-| `greetings/<角色标识>-<哈希>.mp3` | 她招呼的音频。App 只显示 `greeting` 的原文和中文字幕，不播放这个文件；`eidolon greeting upload` 仍会把它合成上传，留给以后的入口 |
-| `call-openers/<角色标识>-<哈希>.mp3` | 她开场白的音频，规则同 `greetings/`。App 显示 `call_opener` 的文字和字幕，不播放这个文件 |
+| `greetings/<角色标识>-<哈希>.mp3` | 她招呼的音频。角色没有配 `call_opener` 时，App 显示并播放这一句；没有 mp3 时只显示文字 |
+| `call-openers/<角色标识>-<哈希>.mp3` | 她开场白的音频。App 接通后显示 `call_opener` 的文字，并播放这个文件；没有 mp3 时只显示文字 |
 
 后端通过 `/api/characters` 把默认衣装的地址和衣装清单的地址（`stand.outfits_url`）告诉 App。
 
@@ -344,7 +344,7 @@ greeting_subtitle = "……初次见面"              # 中文字幕
 
 两项要一起配，都写成双引号的单行字符串；只配一项、或原文去掉语气提示后什么都不剩时，后端拒绝启动并说明是哪位角色。语气提示只给语音合成听，App 里不显示。
 
-后端在 `/api/characters` 里给出每句招呼的原文（去掉了语气提示）和中文字幕，没配 `EIDOLON_STAND_ASSETS_URL` 也不影响文字显示。招呼的音频不是 App 运行所需的：当前客户端只读文字，不播放提前合成的 mp3；要生成音频见下面的「音频（可选）」。
+后端在 `/api/characters` 里给出每句招呼的原文（去掉了语气提示）、中文字幕和音频地址，没配 `EIDOLON_STAND_ASSETS_URL` 时音频地址为空，App 只显示文字。App 会在通话接通后播放这段音频；要让它有声音，见下面的「音频」。
 
 ### 开场白
 
@@ -355,18 +355,20 @@ call_opener = "[shyly] あっ、もしもし……真乃です。えっと、今
 call_opener_subtitle = "啊，喂……我是真乃。那个，现在方便接电话吗？"
 ```
 
-开场白的音频同样由 `eidolon greeting upload` 放进存储桶的 `call-openers/`，当前客户端不播放。
+开场白的音频同样由 `eidolon greeting upload` 放进存储桶的 `call-openers/`；App 接通后会播放它。
 
-### 音频（可选）
+### 音频
 
-当前客户端不播放招呼和开场白的音频，这一段可以跳过。要让存储桶的 `greetings/` 和 `call-openers/` 里有 mp3，在服务器或自己的电脑上，不经过 docker，和立绘同步一样用 uv 运行：
+App 接通电话后会播放开场白（没有开场白时播放招呼）的 mp3；缺少音频时仍然显示文字，只是没有声音。和立绘同步一样，在服务器或自己的电脑上不经过 docker，用 uv 运行：
 
 ```sh
 cd backend
-uv run --env-file=../.env eidolon greeting upload
+uv run --env-file=../.env eidolon greeting upload --build ../corpus/stand
 ```
 
-它读取 `.env` 的 `FISH_AUDIO_API_KEY`、`FISH_AUDIO_MODEL` 和存储桶的 `EIDOLON_STAND_S3_*`（密钥除了上传还要能删除对象）。命令只合成存储桶里还没有的音频；配置里已经没有的招呼或开场白，会从存储桶删掉。
+同机托管时用 `--build` 写进整理目录，Caddy 会从 `corpus/stand/greetings/` 和 `corpus/stand/call-openers/` 提供这些文件（生产 compose 已挂载）。用 S3、R2 或 CDN 时去掉 `--build`，命令改为上传到 `EIDOLON_STAND_S3_*` 的存储桶；那条路还会删掉存储桶里配置已不存在的旧版本。
+
+两种方式都读取 `.env` 的 `FISH_AUDIO_API_KEY` 和 `FISH_AUDIO_MODEL`，只合成还没有的音频，可以重复执行。
 
 ### 读音
 
@@ -393,7 +395,7 @@ uv run eidolon reading draft
 改完提交、部署，然后：
 
 1. 重启后端，读音文件只在启动时读，后台不能改它。
-2. 已经合成的招呼音频不会自动更新；需要更新时再跑一次 `eidolon greeting upload`（见「音频（可选）」）。
+2. 已经合成的招呼音频不会自动更新；需要更新时再跑一次 `eidolon greeting upload --build ../corpus/stand`（见「音频」）。
 
 ### 下线
 

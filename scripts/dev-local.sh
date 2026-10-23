@@ -128,7 +128,9 @@ start_caddy() {
     EIDOLON_WEB_DIR="$ROOT/deploy/web" \
     EIDOLON_STAND_ASSETS_DIR="$ROOT/corpus/stand/source/assets" \
     EIDOLON_STAND_LISTS_DIR="$ROOT/corpus/stand/outfits" \
-    EIDOLON_STAND_THUMBS_DIR="$ROOT/corpus/stand/thumbnails" "$CADDY" run \
+    EIDOLON_STAND_THUMBS_DIR="$ROOT/corpus/stand/thumbnails" \
+    EIDOLON_STAND_GREETINGS_DIR="$ROOT/corpus/stand/greetings" \
+    EIDOLON_STAND_CALL_OPENERS_DIR="$ROOT/corpus/stand/call-openers" "$CADDY" run \
     --config "$ROOT/scripts/dev/Caddyfile" --adapter caddyfile
   wait_http http://127.0.0.1:8080/ 30 || die "Caddy 没起来，看 $STATE/caddy.log"
 }

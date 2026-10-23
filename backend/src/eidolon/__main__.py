@@ -565,19 +565,41 @@ def _draft_readings(args: argparse.Namespace) -> int:
 
 async def _greeting_upload(args: argparse.Namespace) -> int:
     from eidolon.characters import load_characters
-    from eidolon.greetings import FishAudioSettings, upload_greetings
+    from eidolon.greetings import FishAudioSettings, upload_greetings, write_greetings
     from eidolon.readings import load_readings, readings_path
     from eidolon.s3 import S3Error, S3Settings
 
     characters_path = args.characters or characters_path_from_env()
+    bucket: S3Settings | None = None
     try:
         characters = load_characters(characters_path, require_sheets=False)
         readings = load_readings(readings_path(characters_path))
-        bucket = S3Settings.from_env(purpose="上传招呼和开场白")
+        if args.build is None:
+            bucket = S3Settings.from_env(purpose="上传招呼和开场白")
         fish = FishAudioSettings.from_env()
     except RuntimeError as e:  # a broken character configuration or readings, settings missing
         print(e, file=sys.stderr)
         return 1
+    if args.build is not None:
+        report = await write_greetings(
+            characters.values(), args.build, fish, readings
+        )
+        for key in report.deleted:
+            print(f"删除了旧版本 {key}")
+        voiced = f"：{'、'.join(report.voiced)}" if report.voiced else ""
+        print(
+            f"在 {args.build} 合成了 {len(report.voiced)} 句招呼和开场白{voiced}；"
+            f"{report.unchanged} 句已有，没有重新合成"
+        )
+        for name, why in report.failed:
+            print(f"{name}：{why}", file=sys.stderr)
+        if report.failed:
+            print(
+                f"{len(report.failed)} 处没有处理完，见上方；改好后重新运行即可，已有的不会重复合成",
+                file=sys.stderr,
+            )
+        return report.exit_code
+    assert bucket is not None
     try:
         report = await upload_greetings(characters.values(), bucket, fish, readings)
     except S3Error as e:
@@ -1168,12 +1190,18 @@ def _parser() -> argparse.ArgumentParser:
         "upload",
         help="用每位角色的音色和部署者的语音合成 key（FISH_AUDIO_API_KEY、FISH_AUDIO_MODEL）把角色配置里的招呼和开场白合成为 mp3，"
         "上传到立绘的存储桶（EIDOLON_STAND_S3_*）的 greetings/、call-openers/ 下，并删掉旧版本和配置里已经没有的；"
-        "只合成存储桶里还没有的（可重复执行；存储桶列不出来时退出码为 2，有没上传完的时为 3）",
+        "只合成存储桶里还没有的（可重复执行；存储桶列不出来时退出码为 2，有没上传完的时为 3）。"
+        "给了 --build 时改为写进本机目录，不读存储桶设置",
     )
     greeting_upload.add_argument(
         "--characters",
         type=Path,
         help="角色配置文件（默认取环境变量 EIDOLON_CHARACTERS_PATH）",
+    )
+    greeting_upload.add_argument(
+        "--build",
+        type=Path,
+        help="写进这个本机目录（corpus/stand 的整理目录），由 Caddy 等同机服务直接提供；不传时上传到存储桶",
     )
 
     evaluation = commands.add_parser("eval", help="评估检索和判断效果").add_subparsers(

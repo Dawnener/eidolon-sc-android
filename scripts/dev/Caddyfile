@@ -69,6 +69,20 @@ HTML
 		header Cache-Control "public, max-age=300"
 	}
 
+	handle_path /stand-assets/call-openers/* {
+		root * {$EIDOLON_STAND_CALL_OPENERS_DIR:/nonexistent}
+		file_server
+		header Access-Control-Allow-Origin "*"
+		header Cache-Control "public, max-age=300"
+	}
+
+	handle_path /stand-assets/greetings/* {
+		root * {$EIDOLON_STAND_GREETINGS_DIR:/nonexistent}
+		file_server
+		header Access-Control-Allow-Origin "*"
+		header Cache-Control "public, max-age=300"
+	}
+
 	handle_path /stand-assets/* {
 		root * {$EIDOLON_STAND_ASSETS_DIR:/nonexistent}
 		file_server

@@ -13,7 +13,14 @@ import pytest
 
 from eidolon.characters import load_characters
 from eidolon.config import FishAudioModel, Settings
-from eidolon.greetings import FishAudioSettings, GreetingReport, greeting_path, upload_greetings
+from eidolon.greetings import (
+    FishAudioSettings,
+    GreetingReport,
+    call_opener_path,
+    greeting_path,
+    upload_greetings,
+    write_greetings,
+)
 from eidolon.readings import load_readings, readings_path
 from eidolon.s3 import S3Error, S3Settings
 from tests.conftest import (
@@ -420,6 +427,34 @@ async def test_a_bucket_that_cannot_be_listed_is_an_error_before_anything_is_voi
     with pytest.raises(S3Error, match="503"):
         await deployment.upload()
 
+    assert deployment.fish.requests == []
+
+
+async def test_greetings_can_be_written_into_a_local_directory(deployment: Deployment, tmp_path):
+    """`--build`: the same files, under the same names, in a directory served as-is."""
+    deployment.configure(mano_opener=("[softly] もしもし", "喂喂"))
+    characters = load_characters(deployment.characters.path, require_sheets=False)
+    readings = load_readings(readings_path(deployment.characters.path))
+    transport = httpx.MockTransport(deployment.fish.handle)
+
+    first = await write_greetings(
+        characters.values(), tmp_path, FishAudioSettings("deployer-fish-key"), readings,
+        transport=transport,
+    )
+
+    assert len(first.voiced) == 3  # Mano's greeting and opener, Kogane's greeting
+    for character in characters.values():
+        for path in (greeting_path(character), call_opener_path(character)):
+            if path is not None:
+                assert (tmp_path / path).stat().st_size > 0
+    deployment.fish.requests.clear()
+
+    again = await write_greetings(
+        characters.values(), tmp_path, FishAudioSettings("deployer-fish-key"), readings,
+        transport=transport,
+    )
+
+    assert (again.voiced, again.unchanged) == ([], 3)
     assert deployment.fish.requests == []
 
 

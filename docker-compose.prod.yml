@@ -26,6 +26,8 @@ services:
       - ./corpus/stand/source/assets/spine:/srv/stand-assets/spine:ro
       - ./corpus/stand/outfits:/srv/stand-assets/outfits:ro
       - ./corpus/stand/thumbnails:/srv/stand-assets/thumbnails:ro
+      - ./corpus/stand/greetings:/srv/stand-assets/greetings:ro
+      - ./corpus/stand/call-openers:/srv/stand-assets/call-openers:ro
       - ./android/native/build/outputs/apk:/srv/apk:ro
       - ./deploy/web:/srv/web:ro
       - caddy-data:/data # 证书

@@ -18,8 +18,10 @@ data class Character(
     val backgroundUrl: String? = null,
     val callOpenerJa: String? = null,
     val callOpenerZh: String? = null,
+    val callOpenerAudioUrl: String? = null,
     val greetingJa: String? = null,
     val greetingZh: String? = null,
+    val greetingAudioUrl: String? = null,
     val stand: Stand? = null,
 )
 

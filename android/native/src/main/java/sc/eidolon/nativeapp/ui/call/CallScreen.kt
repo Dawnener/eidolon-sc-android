@@ -70,7 +70,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import android.Manifest
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.os.SystemClock
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.DisposableEffect
@@ -125,6 +128,47 @@ fun CallScreen(
     // 不是每位角色都配了通话开场白；没有时用她的招呼，至少通话页有一句她的台词。
     val openerJa = person?.callOpenerJa ?: person?.greetingJa
     val openerZh = person?.callOpenerZh ?: person?.greetingZh
+    val openerAudioUrl = person?.callOpenerAudioUrl ?: person?.greetingAudioUrl
+    var openerPlayed by remember(person?.id) { mutableStateOf(false) }
+    val openerPlayer = remember { mutableStateOf<MediaPlayer?>(null) }
+    // 接通后先放服务器预先合成好的开场白；没有音频时仍然显示文字。
+    LaunchedEffect(connected, openerAudioUrl) {
+        if (!connected || openerPlayed || openerAudioUrl.isNullOrBlank()) return@LaunchedEffect
+        openerPlayed = true
+        val player = MediaPlayer()
+        openerPlayer.value = player
+        try {
+            player.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build(),
+            )
+            player.setDataSource(openerAudioUrl)
+            player.setOnPreparedListener { it.start() }
+            player.setOnCompletionListener {
+                it.release()
+                if (openerPlayer.value === it) openerPlayer.value = null
+            }
+            player.setOnErrorListener { failed, what, extra ->
+                Log.w("EidolonCall", "opener audio failed: $what/$extra $openerAudioUrl")
+                failed.release()
+                if (openerPlayer.value === failed) openerPlayer.value = null
+                true
+            }
+            player.prepareAsync()
+        } catch (error: Exception) {
+            Log.w("EidolonCall", "opener audio failed", error)
+            player.release()
+            openerPlayer.value = null
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            openerPlayer.value?.release()
+            openerPlayer.value = null
+        }
+    }
     var outfitCards by remember(person?.id) { mutableStateOf<List<OutfitCard>>(emptyList()) }
     var outfitsLoading by remember(person?.id) { mutableStateOf(false) }
     var outfitsError by remember(person?.id) { mutableStateOf<String?>(null) }

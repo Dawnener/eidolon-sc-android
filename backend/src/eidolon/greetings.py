@@ -28,6 +28,7 @@ import os
 import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import httpx
 
@@ -183,6 +184,63 @@ async def upload_greetings(
     finally:
         await storage.aclose()
     return report
+
+
+async def write_greetings(
+    characters: Iterable[Character],
+    directory: Path,
+    fish: FishAudioSettings,
+    readings: Sequence[Reading],
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> GreetingReport:
+    """`upload_greetings` for a directory served as-is, with no bucket: voice what it lacks
+    into `directory`, under the same paths, and delete her older versions there. One that
+    fails is reported and the rest go on."""
+    characters = list(characters)
+    dictionary = pronunciation_dictionary(readings)
+    report = GreetingReport()
+    async with httpx.AsyncClient(transport=transport, timeout=_TIMEOUT) as client:
+        for kind in _KINDS:
+            for character in (c for c in characters if kind.of(c) is not None):
+                try:
+                    await _write(kind, character, directory, client, fish, dictionary, report)
+                except _Failed as e:
+                    report.failed.append((_whose(kind, character), str(e)))
+    return report
+
+
+async def _write(
+    kind: _Kind,
+    character: Character,
+    directory: Path,
+    client: httpx.AsyncClient,
+    fish: FishAudioSettings,
+    dictionary: list[dict] | None,
+    report: GreetingReport,
+) -> None:
+    line = kind.of(character)
+    assert line is not None
+    path = kind.path(character)
+    if path is None:
+        raise _Failed("没有音色：characters.toml 里她的 voice_id 是空的")
+    dest = directory / path
+    try:
+        if dest.exists() and dest.stat().st_size > 0:
+            report.unchanged += 1
+        else:
+            said = spoken_by(voiced(line.text), fish.model)
+            audio = await _voice(client, fish, said, character.voice_id, dictionary)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(audio)
+            report.voiced.append(_whose(kind, character))
+        hers = kind.hers(character)
+        for old in sorted(dest.parent.glob(f"{character.id}-*.mp3")):
+            if old != dest and hers.fullmatch(f"{kind.directory}/{old.name}"):
+                old.unlink()
+                report.deleted.append(f"{kind.directory}/{old.name}")
+    except OSError as e:
+        raise _Failed(str(e)) from None
 
 
 def _whose(kind: _Kind, character: Character) -> str:

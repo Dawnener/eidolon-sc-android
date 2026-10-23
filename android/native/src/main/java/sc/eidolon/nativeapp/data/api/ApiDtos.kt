@@ -167,6 +167,7 @@ data class CharacterDto(
 data class ScriptedLineDto(
     val ja: String,
     val subtitle: String? = null,
+    @SerialName("audio_url") val audioUrl: String? = null,
 )
 
 @Serializable
@@ -363,8 +364,10 @@ fun CharacterDto.toDomain(): Character = Character(
     backgroundUrl = backgroundUrl,
     callOpenerJa = callOpener?.ja,
     callOpenerZh = callOpener?.subtitle,
+    callOpenerAudioUrl = callOpener?.audioUrl,
     greetingJa = greeting?.ja,
     greetingZh = greeting?.subtitle,
+    greetingAudioUrl = greeting?.audioUrl,
     stand = stand?.toDomain(),
 )
 
