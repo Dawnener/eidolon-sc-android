@@ -57,7 +57,6 @@ import sc.eidolon.nativeapp.ui.ownkeys.OwnKeysScreen
 import sc.eidolon.nativeapp.ui.profile.ProfileScreen
 import sc.eidolon.nativeapp.ui.reachout.ReachOutModelScreen
 import sc.eidolon.nativeapp.ui.settings.SettingsScreen
-import sc.eidolon.nativeapp.ui.setup.ServerSetupScreen
 import sc.eidolon.nativeapp.ui.stats.StatsScreen
 
 private const val TAB_FADE_MS = 180
@@ -297,7 +296,6 @@ fun MainScaffold(container: AppContainer, account: Account) {
                         onOpenMemories = { nav.navigate(Routes.Memories) },
                         onOpenStats = { nav.navigate(Routes.Stats) },
                         onOpenDataPackage = { nav.navigate(Routes.DataPackage) },
-                        onChangeServer = { nav.navigate(Routes.Server) },
                     )
                 }
                 composable(Routes.Profile) {
@@ -321,9 +319,6 @@ fun MainScaffold(container: AppContainer, account: Account) {
                 }
                 composable(Routes.DataPackage) {
                     DataPackageScreen(container) { nav.popBackStack() }
-                }
-                composable(Routes.Server) {
-                    ServerSetupScreen(container, applySystemBarsPadding = false) { nav.popBackStack() }
                 }
             }
         }

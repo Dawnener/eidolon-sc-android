@@ -13,8 +13,8 @@ android {
         applicationId 'sc.eidolon.nativeapp'
         minSdk 26
         targetSdk 34
-        versionCode 7
-        versionName '0.1.6'
+        versionCode 8
+        versionName '0.1.7'
         // 首次启动直接连这个部署；用户仍然可以在设置里更换服务器。
         buildConfigField "String", "DEFAULT_SERVER_URL", '"https://eidolon.shiny-colors-ai.xyz"'
         // 只打手机需要的 ABI；x86 模拟器用的两份 WebRTC 库会让 APK 多出近 30 MB。

@@ -109,7 +109,9 @@ start_backend() {
   echo "起后端 :8000"
   (
     cd "$ROOT/backend"
-    start_bg backend env HOST=127.0.0.1 PORT=8000 uv run --quiet --env-file=../.env eidolon serve
+    start_bg backend env HOST=127.0.0.1 PORT=8000 \
+      EIDOLON_APK_DIR="$ROOT/android/native/build/outputs/apk/release" \
+      uv run --quiet --env-file=../.env eidolon serve
   )
   if ! wait_http http://127.0.0.1:8000/api/health 120; then
     echo "后端没起来，最后几行日志：" >&2

@@ -15,7 +15,6 @@ object Routes {
     const val Memories = "settings/memories"
     const val Stats = "settings/stats"
     const val DataPackage = "settings/data-package"
-    const val Server = "settings/server"
 
     fun chat(characterId: String) = "chat/${Uri.encode(characterId)}"
 

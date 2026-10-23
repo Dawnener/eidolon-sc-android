@@ -3,6 +3,7 @@ package sc.eidolon.nativeapp.ui.settings
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -51,7 +52,6 @@ fun SettingsScreen(
     onOpenMemories: () -> Unit,
     onOpenStats: () -> Unit,
     onOpenDataPackage: () -> Unit,
-    onChangeServer: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var confirmLogout by remember { mutableStateOf(false) }
@@ -89,12 +89,6 @@ fun SettingsScreen(
             title = "制作人档案",
             subtitle = "称呼、性别、时区、生日",
             onClick = onOpenProfile,
-        )
-        HorizontalDivider()
-        SettingsRow(
-            title = "服务器",
-            subtitle = container.session.serverUrl.orEmpty(),
-            onClick = onChangeServer,
         )
         HorizontalDivider()
         SettingsRow(
@@ -167,6 +161,16 @@ fun SettingsScreen(
         SettingsRow(
             title = "关于",
             subtitle = "Eidolon-SC ${BuildConfig.VERSION_NAME} · 非官方粉丝作品，角色由 AI 扮演",
+            onClick = {
+                runCatching {
+                    context.startActivity(
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://github.com/MikiHoshiiP/eidolon-sc-android"),
+                        ),
+                    )
+                }
+            },
         )
         HorizontalDivider()
         SettingsRow(

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import math
+import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import aclosing, asynccontextmanager
 from dataclasses import asdict
@@ -10,7 +11,13 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from starlette.types import Receive, Scope, Send
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -390,6 +397,29 @@ def create_app(backend: Backend) -> FastAPI:
         conversation = await conversation_or_404(conversation_id, user_id)
         await refuse_if_ended(conversation)
         return conversation
+
+    @app.get("/api/download/android")
+    def download_android() -> RedirectResponse:
+        """The newest release APK this deployment serves, whatever version the page was
+        loaded at; the file itself stays at its versioned path, so the browser gets its
+        proper name. No authentication: the download page is public."""
+        directory = Path(os.environ.get("EIDOLON_APK_DIR", "/apk/release"))
+        newest: tuple[tuple[int, int, int], str] | None = None
+        for path in directory.glob("Eidolon-SC-*-release.apk"):
+            middle = path.name.removeprefix("Eidolon-SC-").removesuffix("-release.apk")
+            parts = middle.split(".")
+            if len(parts) != 3 or not all(part.isdigit() for part in parts):
+                continue
+            version = (int(parts[0]), int(parts[1]), int(parts[2]))
+            if newest is None or version > newest[0]:
+                newest = (version, path.name)
+        if newest is None:
+            raise HTTPException(404, "还没有可下载的安装包")
+        return RedirectResponse(
+            f"/apk/native/release/{newest[1]}",
+            status_code=302,
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.get("/api/health")
     async def health() -> JSONResponse:

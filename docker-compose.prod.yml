@@ -55,6 +55,7 @@ services:
       - ./characters:/characters:ro # 人设、角色资料、头像
       - ./corpus:/corpus:ro # SCTranslationData 等剧情库的原始数据，导入和同步时读取（deploy/story-sync.sh 在主机上更新）
       - ./deploy:/deploy:ro # 活动名对照表 event-names.toml（同步时读取）
+      - ./android/native/build/outputs/apk/release:/apk/release:ro # /api/download/android 选最新包
     restart: unless-stopped
     logging: *logging
     # 停止时先给 20 秒让进行中的请求（文字回合的回复）结束，再挂断通话、关库；默认 10 秒后就会被强行结束
