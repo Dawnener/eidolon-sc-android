@@ -79,6 +79,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
 import sc.eidolon.nativeapp.AppContainer
 import sc.eidolon.nativeapp.data.api.CallEvent
@@ -97,6 +98,13 @@ fun CallScreen(
     onEnd: () -> Unit,
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
+    // 通话页打开期间让屏幕常亮；离开页面或挂断后恢复原来的设置。
+    DisposableEffect(view) {
+        val wasKeptOn = view.keepScreenOn
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = wasKeptOn }
+    }
     val baseUrl = container.session.serverUrl.orEmpty()
     val character by produceState(
         initialValue = container.characters.cached(characterId),
