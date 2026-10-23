@@ -1,11 +1,6 @@
 # Android 客户端
 
-`android/` 里有两套客户端，可以同时安装：
-
-- **`native`（推荐）**：Kotlin + Jetpack Compose，直接调用后端的 `/api/*`，不加载网页。当前覆盖 GitHub 登录、同意条款、对话列表、聊天、制作人档案、历史对话、自带密钥、记忆、搭话、推送、统计/分享图、礼物、好感度、成就和每日任务。
-- **`app`（网页壳）**：全屏 WebView，加载 Next.js 网页版。网页版的语音通话、照片、公告、后台等功能都在，适合临时用手机看完整网页版。
-
-两套 APK 的包名不同，同一台手机可以同时装。
+`android/native/` 是唯一的客户端：Kotlin + Jetpack Compose，直接调用后端的 `/api/*`，不加载网页。当前覆盖 GitHub 登录、同意条款、对话列表、聊天、通话、制作人档案、历史对话、自带密钥、记忆、搭话、推送、统计/分享图、礼物、好感度、成就和每日任务。
 
 ## 原生客户端（`native`）
 
@@ -49,7 +44,7 @@ Release 目前用自动生成的 debug keystore 签名，方便侧载和覆盖�
 - 外观/主题设置；
 - 落地页 3D。
 
-需要这些功能时可以用网页壳，或者继续往原生 App 里补。
+需要这些功能时继续往原生 App 里补。
 
 ### 服务器地址
 
@@ -57,27 +52,16 @@ Release 目前用自动生成的 debug keystore 签名，方便侧载和覆盖�
 
 ### 通话立绘
 
-通话页优先显示服务器返回的 Spine 立绘（`/api/characters` 里的 `stand.default_outfit`）。App 里带着官方 spine-ts 3.6 runtime 的副本（`native/src/main/assets/stand/`，原样取自 `frontend/public/vendor/spine-3.6/`），在透明 WebView 里播放；素材下载失败、设备不支持 WebGL 或服务器没有配 `EIDOLON_STAND_ASSETS_URL` 时，自动退回原来的头像界面，不影响通话页其余部分。
+通话页优先显示服务器返回的 Spine 立绘（`/api/characters` 里的 `stand.default_outfit`）。App 里带着官方 spine-ts 3.6 runtime 的副本（`native/src/main/assets/stand/`，官方 spine-ts 3.6 原样副本），在透明 WebView 里播放；素材下载失败、设备不支持 WebGL 或服务器没有配 `EIDOLON_STAND_ASSETS_URL` 时，自动退回原来的头像界面，不影响通话页其余部分。
 
 素材的公开地址由服务器决定，App 只读取 `/api/characters`，不需要额外配置。素材响应要带 CORS（`Access-Control-Allow-Origin: *`；如果桶只允许指定来源，要把原生 App 页面的来源 `https://appassets.androidplatform.net` 也放进去）；本地开发栈的 Caddy 已经把 `/stand-assets/` 指到 `corpus/stand` 并加了这个头。
 
-衣装清单随新卡更新：在 `backend/` 下运行 `uv run eidolon stand fetch --build ../corpus/stand`，再运行 `uv run eidolon stand outfits --build ../corpus/stand`，最后在 `frontend/` 下运行 `npm run stand:thumbnails -- --build ../corpus/stand`。原生 App 每次进入通话页会重新拉取清单。
-
-## 网页壳（`app`）
-
-```bash
-source ~/.config/eidolon-android/env.sh
-cd android
-./gradlew :app:assembleDebug
-# 产物：android/app/build/outputs/apk/debug/app-debug.apk
-```
-
-网页壳的默认地址写在 `android/app/src/main/res/values/strings.xml` 的 `default_server_url`，现在也是空的；输入框的占位地址只是格式示例。它加载的是完整网页版，所以页面、路由和样式都来自 Next.js；它只负责地址、麦克风权限、文件选择、下载、返回键和外部链接。
+衣装清单随新卡更新：在 `backend/` 下运行 `uv run eidolon stand fetch --build ../corpus/stand`，再运行 `uv run eidolon stand outfits --build ../corpus/stand`，最后在 `tools/stand-thumbnails/` 下运行 `node --experimental-strip-types stand-thumbnails.mts --build ../../corpus/stand`。原生 App 每次进入通话页会重新拉取清单。
 
 ## 前置条件
 
 - 这台 WSL2 机器和手机在**同一个 Wi-Fi**，且网络没有开启客户端隔离（酒店、访客网络常会隔离）。
-- 手机 Android 8+。网页壳建议把「Android System WebView」更新到最新。
+- 手机 Android 8+。
 - 仓库根目录有 `.env`，公开部署至少要有：
 
   ```dotenv
@@ -156,12 +140,11 @@ EIDOLON_LAN_IP=<你的局域网 IP> bash scripts/dev-local.sh start
 2. 打开 `http://<局域网 IP>:8080/apk/`，选择要装的包：
    - 原生 App Release：`/apk/native/release/native-release.apk`（推荐）
    - 原生 App Debug：`/apk/native/debug/native-debug.apk`
-   - 网页壳：`/apk/app-debug.apk`（注意文件名是 `app-debug.apk`，不是 `apk-debug.apk`）
 3. 按提示允许浏览器「安装未知应用」。
 
-原生 App 首次启动会显示服务器地址设置；填 Caddy 的地址，登录、同意条款后进入对话列表。网页壳首次启动先显示地址设置，之后是完整网页版：落地页 → 登录 → 开发登录。
+原生 App 首次启动会连内置的公开部署地址；登录、同意条款后进入对话列表。需要换服务器时在「设置 → 服务器」修改。
 
-原生 App 会自动记住上次的服务器地址；网页壳换地址会清掉旧服务器的 cookie、缓存和 Web Storage。
+原生 App 会自动记住上次的服务器地址。
 
 ## 返回键
 
@@ -170,12 +153,6 @@ EIDOLON_LAN_IP=<你的局域网 IP> bash scripts/dev-local.sh start
 - 聊天页返回对话列表；查看历史对话时，返回先回到当前对话；
 - 设置子页（档案、自带密钥、记忆、搭话模型、服务器）返回设置首页；
 - 设置和对话列表按返回退出应用。
-
-**网页壳**按页面层级处理返回：
-
-- 顶层页面（`/`、`/conversations`、`/settings`、`/gifts`、`/admin`）按返回退出应用；
-- 子页面按返回先回上一级：`/conversation/*` → 对话列表，`/settings/*` → 设置首页，`/admin/*` → 后台首页；`/login`、`/consent`、`/about`、`/privacy`、`/terms` 有历史就回历史，没有就回 `/`；
-- 以后开通话时要注意：在通话中的对话页按返回会离开这一页，不会经过网页里的挂断确认。
 
 ## 防火墙
 
@@ -191,7 +168,6 @@ New-NetFirewallRule -DisplayName "Eidolon dev 8080" -Direction Inbound -Protocol
 Remove-NetFirewallRule -DisplayName "Eidolon dev 8080"
 ```
 
-如果不能提权，退路是 `adb reverse tcp:3000 tcp:3000`，把网页壳的地址改成 `http://localhost:3000`（需要手机开启无线调试并保持 adb 连接）。
 
 ## 登录与 Origin
 
@@ -208,9 +184,6 @@ Remove-NetFirewallRule -DisplayName "Eidolon dev 8080"
 | 原生 App 发不了消息 | 纯自带密钥模式下要在「自带密钥 → 对话 LLM」填 key；没有 key 会收到 429 |
 | 收不到搭话推送 | 「设置 → 推送」是否打开、通知权限是否允许；通知栏有没有「Eidolon 正在接收搭话」常驻通知；MIUI 是否允许自启动、省电策略是否「无限制」 |
 | 换 IP 后自带密钥不见 | 旧版本按地址保存的密钥需要重填一次；新版本按部署 ID 保存，之后换 IP/域名不会丢 |
-| 前端构建失败 | `logs/local-stack/frontend.log`；`next/font/google` 取字体失败时可试 `NODE_OPTIONS=--use-env-proxy` |
-| 网页壳布局错乱/白屏 | 更新手机的 Android System WebView；用桌面 Chrome 的 `chrome://inspect` 连调试包排查 |
-| 网页壳想换地址 | 先让当前地址加载失败（显示浮层），或清除应用数据；原生 App 直接在「设置 → 服务器」改 |
 
 日志和 PID 都在 `logs/local-stack/`（已被 git 忽略）。
 
@@ -219,7 +192,6 @@ Remove-NetFirewallRule -DisplayName "Eidolon dev 8080"
 - 开发登录在局域网内对所有人开放：任何能访问 8080 的人都能冒充任意名字。只在可信网络使用，用完 `bash scripts/dev-local.sh stop`。
 - 原生 App 的通话已经接 WebRTC，但需要 HTTPS 和麦克风权限；公网移动网络还要给后端配 TURN（coturn），否则只能在局域网/部分网络下接通。
 - 原生 App 的推送用前台服务维持 SSE，会有一条低优先级常驻通知；MIUI 仍可能杀进程，需要允许自启动并把省电策略设为「无限制」。
-- 原生 App 的照片只显示占位框，还没有实际图片；网页版可以看照片。
+- 原生 App 的照片只显示占位框，还没有实际图片。
 - 没有 `corpus/` 时剧情回忆不可用；纯自带密钥且没有部署者向量化/重排/判断模型时，记忆、剧情回忆、好感度、照片也会关闭；不影响文字对话。
-- 网页壳的分享图导出用的是 `blob:` 下载，WebView 的下载监听接不住；数据包导入/导出走普通 http(s) 下载，正常。
 - Caddy 改写 `Origin` 是本地开发绕过；如果以后经常在局域网上调试，更干净的做法是给后端加一个 `EIDOLON_DEV_ORIGINS` 允许列表并补测试。

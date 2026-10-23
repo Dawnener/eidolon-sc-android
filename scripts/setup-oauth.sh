@@ -205,7 +205,7 @@ if [[ -n "$EIDOLON_DOMAIN" ]]; then
   SITE="https://$EIDOLON_DOMAIN"
   COMPOSE=(docker compose -f docker-compose.prod.yml)
 else
-  SITE="http://localhost:3000"
+  SITE="http://localhost:8080"
   COMPOSE=(docker compose)
 fi
 write_env EIDOLON_DOMAIN "$EIDOLON_DOMAIN"
@@ -328,7 +328,7 @@ elif [[ -n "$EIDOLON_DOMAIN" ]]; then
 else
   say "这台机器上没有可用的 Docker，可以不用它，直接在两个终端里分别启动："
   step "后端：cd backend && uv sync && uv run --env-file ../.env eidolon"
-  step "前端：cd frontend && npm install && npm run dev"
+  step "启动：bash scripts/dev-local.sh start（后端 + Caddy + 下载页）"
   note "后端启动时会先调用一次对话模型做检查，CHAT_LLM_* 要填真实可用的值。"
 fi
 pause "后端起来后按回车"

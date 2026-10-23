@@ -3,7 +3,7 @@ characters'.
 
 It is configuration, not data: the maintainer keeps it in the repository as they keep the
 characters, and neither `.env` nor the admin console changes it. Each gift has its
-identifier (also its illustration's file name in the frontend's static files, and what
+identifier (also its illustration's file name in the static web files, and what
 backpacks and gift records keep), its name, its category and its rarity. A gift is never
 deleted once out, only retired: no draw gives it any more, but whoever has one still sees
 it and can give it. Every rarity needs a gift not retired, or draws of it would come up

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 本地开发栈：后端 :8000、Next standalone :3000、Caddy :8080（手机访问的入口）。
+# 本地开发栈：后端 :8000、Caddy :8080（手机访问的入口，提供 API、下载页和立绘）。
 # 如果本机配了 ~/.cloudflared/config.yml，还会启动 Cloudflare Tunnel；
 # 公网身份校验由 Cloudflare Access 负责。
 #
@@ -18,7 +18,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE="$ROOT/logs/local-stack"
 CADDY="$HOME/.local/opt/caddy/caddy"
-APK_DIR="$ROOT/android/app/build/outputs/apk/debug"
 NATIVE_APK_DIR="$ROOT/android/native/build/outputs/apk"
 # 可选：本机已经建好 Cloudflare Tunnel 时，顺手启动公网入口。
 # 配置放在仓库外，里面是本机凭证，不提交。
@@ -102,26 +101,6 @@ wait_http() {
   return 1
 }
 
-build_frontend() {
-  local force="${1:-}"
-  if [ "$force" != "force" ] && [ -f "$ROOT/frontend/.next/standalone/server.js" ]; then
-    return
-  fi
-  (
-    cd "$ROOT/frontend"
-    if [ ! -d node_modules ]; then
-      echo "安装前端依赖"
-      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci
-    fi
-    echo "构建前端"
-    BACKEND_URL=http://127.0.0.1:8000 npm run build
-    rm -rf .next/standalone/public .next/standalone/.next/static
-    mkdir -p .next/standalone/.next
-    cp -r public .next/standalone/public
-    cp -r .next/static .next/standalone/.next/static
-  )
-}
-
 start_backend() {
   if running backend; then
     echo "后端已在运行（pid $(cat "$(pid_file backend)")）"
@@ -139,27 +118,14 @@ start_backend() {
   fi
 }
 
-start_frontend() {
-  if running frontend; then
-    echo "前端已在运行（pid $(cat "$(pid_file frontend)")）"
-    return
-  fi
-  echo "起前端 :3000"
-  (
-    cd "$ROOT/frontend"
-    start_bg frontend env HOSTNAME=127.0.0.1 PORT=3000 NODE_ENV=production \
-      BACKEND_URL=http://127.0.0.1:8000 node .next/standalone/server.js
-  )
-  wait_http http://127.0.0.1:3000/ 60 || die "前端没起来，看 $STATE/frontend.log"
-}
-
 start_caddy() {
   if running caddy; then
     echo "Caddy 已在运行（pid $(cat "$(pid_file caddy)")）"
     return
   fi
   echo "起 Caddy :8080"
-  start_bg caddy env EIDOLON_APK_DIR="$APK_DIR" EIDOLON_NATIVE_APK_DIR="$NATIVE_APK_DIR" \
+  start_bg caddy env EIDOLON_NATIVE_APK_DIR="$NATIVE_APK_DIR" \
+    EIDOLON_WEB_DIR="$ROOT/deploy/web" \
     EIDOLON_STAND_ASSETS_DIR="$ROOT/corpus/stand/source/assets" \
     EIDOLON_STAND_LISTS_DIR="$ROOT/corpus/stand/outfits" \
     EIDOLON_STAND_THUMBS_DIR="$ROOT/corpus/stand/thumbnails" "$CADDY" run \
@@ -184,9 +150,7 @@ start() {
   ensure_env
   ensure_uv
   ensure_caddy
-  build_frontend "${1:-}"
   start_backend
-  start_frontend
   start_caddy
   start_tunnel
   echo
@@ -194,17 +158,17 @@ start() {
   if [ -n "$PUBLIC_HOST" ]; then
     echo "公网入口：https://$PUBLIC_HOST/（Cloudflare Access）"
   fi
-  if [ -f "$APK_DIR/app-debug.apk" ] || [ -f "$NATIVE_APK_DIR/native-debug.apk" ]; then
-    echo "APK 下载：http://$LAN_IP:8080/apk/（原生 App / 网页壳）"
+  if [ -f "$NATIVE_APK_DIR/debug/native-debug.apk" ]; then
+    echo "APK 下载：http://$LAN_IP:8080/apk/（原生 App）"
   else
-    echo "还没构建 APK：先 bash scripts/android-toolchain.sh，再 cd android && ./gradlew assembleDebug"
+    echo "还没构建 APK：先 bash scripts/android-toolchain.sh，再 cd android && ./gradlew :native:assembleDebug"
   fi
   echo "日志：$STATE/"
 }
 
 stop() {
   local name pid
-  for name in cloudflared caddy frontend backend; do
+  for name in cloudflared caddy backend; do
     local file
     file="$(pid_file "$name")"
     [ -f "$file" ] || continue
@@ -220,7 +184,7 @@ stop() {
 
 status() {
   local name
-  for name in backend frontend caddy cloudflared; do
+  for name in backend caddy cloudflared; do
     if running "$name"; then
       echo "$name: 运行中（pid $(cat "$(pid_file "$name")")）"
     else

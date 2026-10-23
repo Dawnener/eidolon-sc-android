@@ -1,4 +1,4 @@
-# 本地开发用的 Caddy：手机访问 http://<局域网 IP>:8080，反代到本机的 Next。
+# 本地开发用的 Caddy：手机访问 http://<局域网 IP>:8080，API 反代到本机后端，静态下载页和立绘由 Caddy 提供。
 #
 # 1. 后端开发模式只接受 http://localhost|127.0.0.1|::1 的 Origin（sessions.py），
 #    手机发来的 Origin 是 http://<局域网 IP>:8080，所以这里改写成 localhost。
@@ -37,28 +37,18 @@
 <h1>Eidolon</h1>
 <p><a style="color:#7fb4ff" href="/apk/native/release/native-release.apk">下载原生 App（Release，推荐）</a></p>
 <p><a style="color:#7fb4ff" href="/apk/native/debug/native-debug.apk">下载原生 App（Debug）</a></p>
-<p><a style="color:#7fb4ff" href="/apk/app-debug.apk">下载网页壳（app-debug.apk）</a></p>
-<p>安装前需要在系统设置里允许这个浏览器安装未知应用。</p>
 </body>
 </html>
 HTML
 	}
 
 	# 只给真正的安装包加下载头；请求不存在的 .apk 时走普通 404，免得浏览器拿到空的附件
-	@apkApp path /apk/app-debug.apk
 	@apkNative path /apk/native/debug/native-debug.apk /apk/native/release/native-release.apk
-	header @apkApp Content-Type "application/vnd.android.package-archive"
-	header @apkApp Content-Disposition "attachment; filename=app-debug.apk"
 	header @apkNative Content-Type "application/vnd.android.package-archive"
 	header @apkNative Content-Disposition "attachment"
 
 	handle_path /apk/native/* {
 		root * {$EIDOLON_NATIVE_APK_DIR:/nonexistent}
-		file_server
-	}
-
-	handle_path /apk/* {
-		root * {$EIDOLON_APK_DIR:/nonexistent}
 		file_server
 	}
 
@@ -86,22 +76,47 @@ HTML
 		header Cache-Control "public, max-age=300"
 	}
 
-	# 公网请求要保留浏览器真实的 Origin，公开部署的后端会校验它。
-	# 局域网直连仍改成 localhost，让没配 EIDOLON_DOMAIN 的本地开发也能用。
-	@public host eidolon.shiny-colors-ai.xyz
-	handle @public {
-		reverse_proxy 127.0.0.1:3000 {
+	# 原生 App 的全部后端接口。
+	# 公网请求保留浏览器真实的 Origin，公开部署的后端会校验它；
+	# 局域网直连改成 localhost，让没配 EIDOLON_DOMAIN 的本地开发也能用。
+	@publicApi {
+		host eidolon.shiny-colors-ai.xyz
+		path /api/*
+	}
+	handle @publicApi {
+		reverse_proxy 127.0.0.1:8000 {
 			header_up Host {hostport}
+			header_up X-Forwarded-Proto {scheme}
 			flush_interval -1
 		}
 	}
 
-	handle {
-		reverse_proxy 127.0.0.1:3000 {
+	@api path /api/*
+	handle @api {
+		reverse_proxy 127.0.0.1:8000 {
 			header_up Host {hostport}
 			header_up Origin "http://localhost:3000"
-			# 回合回复走 text/event-stream，不能缓冲
 			flush_interval -1
 		}
+	}
+
+	# 原生 App 的同意页会打开这两个地址
+	handle /privacy* {
+		rewrite * /privacy.html
+		root * {$EIDOLON_WEB_DIR:/nonexistent}
+		file_server
+	}
+
+	handle /terms* {
+		rewrite * /terms.html
+		root * {$EIDOLON_WEB_DIR:/nonexistent}
+		file_server
+	}
+
+	# 只剩下载页、隐私政策和使用条款
+	handle {
+		root * {$EIDOLON_WEB_DIR:/nonexistent}
+		try_files {path} /index.html
+		file_server
 	}
 }

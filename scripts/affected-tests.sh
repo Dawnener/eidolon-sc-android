@@ -4,7 +4,6 @@
 #   后端：改过或新增的 backend/tests/test_*.py，加上直接导入了改过模块（backend/src/eidolon/*.py）的测试文件；
 #         被 15 个以上测试导入的枢纽模块（config、store 这类）只加名字里带它的测试。另跑 ruff 和 pyright（全项目，很快）。
 #         测试文件超过 5 个时按 CPU 数并行跑（pytest-xdist），少的时候起进程的那几秒不划算。
-#   前端：vitest related 按导入关系找出改过的 frontend/src 文件相关的测试；另跑 typecheck。
 #
 #   sh scripts/affected-tests.sh [基点]          基点默认是和 origin/main 的分叉点
 #   sh scripts/affected-tests.sh --list [基点]   只列出要跑的测试，不跑
@@ -46,15 +45,11 @@ backend_tests=$(
     done
   } | sort -u | while read -r test; do [ -f "$test" ] && printf '%s\n' "$test"; done
 )
-frontend_sources=$(printf '%s\n' "$changed" | grep -E '^frontend/src/.*\.(ts|tsx)$' | while read -r file; do
-  [ -f "$file" ] && printf '%s\n' "${file#frontend/}"
-done)
 backend_changed=$(printf '%s\n' "$changed" | grep -E '^backend/' | head -n 1)
-frontend_changed=$(printf '%s\n' "$changed" | grep -E '^frontend/' | head -n 1)
 
 if [ "$list_only" = 1 ]; then
-  printf '基点 %s\n后端测试：\n%s\n枢纽模块（只按名字找测试）：%s\n前端改过的源文件（vitest related）：\n%s\n' \
-    "$base" "${backend_tests:-（无）}" "$(sort -u "$hubs" | tr '\n' ' ')" "${frontend_sources:-（无）}"
+  printf '基点 %s\n后端测试：\n%s\n枢纽模块（只按名字找测试）：%s\n' \
+    "$base" "${backend_tests:-（无）}" "$(sort -u "$hubs" | tr '\n' ' ')"
   exit 0
 fi
 
@@ -71,13 +66,6 @@ if [ -n "$backend_changed" ]; then
     [ "$(printf '%s\n' "$backend_tests" | grep -c .)" -gt 5 ] && parallel="-n auto"
     # shellcheck disable=SC2046,SC2086 # 测试文件名不带空格，按行拆成参数；parallel 是零个或两个参数
     (cd backend && run uv run pytest -q -p no:cacheprovider $parallel $(printf '%s\n' "$backend_tests" | sed 's#^backend/##') && exit "$failed") || failed=1
-  fi
-fi
-if [ -n "$frontend_changed" ]; then
-  (cd frontend && run npm run --silent typecheck && exit "$failed") || failed=1
-  if [ -n "$frontend_sources" ]; then
-    # shellcheck disable=SC2086 # 源文件名不带空格，按行拆成参数
-    (cd frontend && run npx vitest related --run --passWithNoTests $frontend_sources && exit "$failed") || failed=1
   fi
 fi
 

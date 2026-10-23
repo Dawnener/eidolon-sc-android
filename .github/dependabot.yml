@@ -13,26 +13,8 @@ updates:
       backend:
         update-types: [minor, patch]
 
-  - package-ecosystem: npm
-    directory: /frontend
-    schedule:
-      interval: weekly
-      day: monday
-    cooldown:
-      default-days: 7
-    groups:
-      frontend:
-        update-types: [minor, patch]
-    ignore:
-      # 类型的大版本跟着实际运行的 Node.js（22）走，和 Dockerfile 的 node 一起手动升
-      - dependency-name: "@types/node"
-        update-types: [version-update:semver-major]
-      # TypeScript 7 是 Go 重写的版本，还没有 JS API（scripts/stand-thumbnails.mts 用 ts.transpileModule），等它有了再手动升
-      - dependency-name: typescript
-        update-types: [version-update:semver-major]
-
   - package-ecosystem: docker
-    directories: [/backend, /frontend]
+    directories: [/backend]
     schedule:
       interval: weekly
       day: monday

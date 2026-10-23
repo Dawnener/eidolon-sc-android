@@ -33,3 +33,6 @@ deploy/event-names.toml
 /.scratch/photos/prototype/tags/contact_sheet.png
 
 __pycache__/
+
+# 缩略图工具的依赖
+/tools/stand-thumbnails/node_modules/

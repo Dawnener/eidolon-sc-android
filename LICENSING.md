@@ -15,6 +15,6 @@ resulting work. Corresponding Source for a non-source form of such a
 combination shall include the source code for the parts of the Spine Runtimes
 used as well as that of the covered work.
 
-The Spine Runtimes included in `frontend/public/vendor/spine-3.6/` are not part
+The Spine Runtimes included in `android/native/src/main/assets/stand/` and `tools/stand-thumbnails/vendor/spine-3.6/` are not part
 of this Program and are not covered by the GNU Affero General Public License;
 they are distributed under their own license, found in that directory.

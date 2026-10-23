@@ -1,14 +1,12 @@
-# 生产环境的 HTTPS 入口：Caddy 自动向 Let's Encrypt 申请并续期证书，HTTP 自动跳转到 HTTPS。
-# 浏览器只有在 HTTPS 下才允许使用麦克风。
+# 生产环境的 HTTPS 入口：只服务原生客户端需要的 API、立绘、APK 和下载/法律页面。
+# Caddy 自动向 Let's Encrypt 申请并续期证书，HTTP 自动跳转到 HTTPS。
 
 {$EIDOLON_DOMAIN} {
-	# 导入数据包是一个最大 200 MiB 的请求体，后端自己会拒绝更大的、说清楚为什么；这里比它
-	# 略宽，只挡远远超出的。只卡这一个地址，别的不动
+	# 导入数据包是一个最大 200 MiB 的请求体，后端自己会拒绝更大的、说清楚为什么。
 	request_body /api/account/data-package {
 		max_size 201MiB
 	}
-	# 只压缩 JSON：对话回复是流式的（SSE），要随到随发，不压缩；页面 Next 自己压缩，
-	# 数据包是 zip、头像是图片，压了也没用
+	# 只压缩 JSON：对话回复是流式的（SSE），要随到随发，不压缩。
 	encode {
 		zstd
 		gzip
@@ -16,8 +14,23 @@
 			header Content-Type application/json*
 		}
 	}
-	# 立绘素材和衣装清单：同机托管时由这里提供；素材可能不在服务器上（用 OSS/R2/CDN），
-	# 这时这个路由会 404，前端会自动退回背景图。
+
+	# APK 下载头
+	@apkFile path *.apk
+	header @apkFile Content-Type "application/vnd.android.package-archive"
+	header @apkFile Content-Disposition "attachment"
+
+	# 原生 App 的全部后端接口
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8000 {
+			header_up Host {hostport}
+			header_up X-Forwarded-Proto {scheme}
+			# 回合回复走 text/event-stream，不能缓冲
+			flush_interval -1
+		}
+	}
+
+	# 通话立绘：衣装文件、衣装清单和缩略图
 	handle_path /stand-assets/* {
 		root * /srv/stand-assets
 		file_server
@@ -25,5 +38,29 @@
 		header Cache-Control "public, max-age=300"
 	}
 
-	reverse_proxy 127.0.0.1:3000
+	# 安装包：/apk/native/release/native-release.apk
+	handle_path /apk/native/* {
+		root * /srv/apk
+		file_server
+	}
+
+	# 原生 App 的同意页会打开这两个地址
+	handle /privacy* {
+		rewrite * /privacy.html
+		root * /srv/web
+		file_server
+	}
+
+	handle /terms* {
+		rewrite * /terms.html
+		root * /srv/web
+		file_server
+	}
+
+	# 只剩下载页、隐私政策和使用条款
+	handle {
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
 }

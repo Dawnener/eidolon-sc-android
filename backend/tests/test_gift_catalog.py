@@ -1,6 +1,6 @@
 """The gift catalog (GLOSSARY.md「礼物」) comes from configuration beside the characters':
 checked as the backend starts, read by signed-in users without who likes what, and each
-gift with its illustration in the frontend's static files. Each character's liked gifts
+gift with its illustration in the static web files. Each character's liked gifts
 are in her character configuration, checked against the catalog as the backend starts."""
 
 import re
@@ -16,7 +16,7 @@ from eidolon.gift_catalog import GIFTS_FILE, check_liked_gifts, load_gift_catalo
 from tests.conftest import REPO_GIFTS, CharacterConfig, ClientFactory
 from tests.fakes import FakeLLM
 
-REPO_ILLUSTRATIONS = Path(__file__).parents[2] / "frontend" / "public" / "gifts"
+REPO_ILLUSTRATIONS = Path(__file__).parents[2] / "deploy" / "web" / "gifts"
 
 
 def gift(id: str, rarity: str = "common", category: str = "food", retired: bool = False) -> str:

@@ -1,6 +1,6 @@
 #!/bin/sh
 # 同步立绘素材：从 ShinyColorsDB 为配了 idol_id 的角色拉取新卡（eidolon stand fetch，ADR-0011）、整理衣装清单
-# （eidolon stand outfits）、渲染缩略图（frontend 的 npm run stand:thumbnails），再上传到 S3 兼容的存储桶
+# （eidolon stand outfits）、渲染缩略图（tools/stand-thumbnails），再上传到 S3 兼容的存储桶
 # （eidolon stand upload）。适合每周用 cron 跑一次，没有新卡时几乎不花时间。
 # 在服务器或自己的电脑上运行都行，不经过 docker；步骤和要装的东西见
 # docs/deploy.md 的「立绘素材」。需要 uv、Node.js（22.18 以上）和 Playwright 的 Chromium；有 flock（util-linux）时
@@ -14,7 +14,7 @@
 #   1  配置出错：缺存储桶的设置、角色配置有误等，没有上传
 #   2  存储桶出错，这次没传完；已上传的不会重复上传，重新运行即可继续
 #   3  有衣装的缩略图没渲染出来：其余照常上传，下次同步再渲染
-#   4  缺少运行环境：uv、Node.js、frontend 的依赖或 Playwright 的 Chromium
+#   4  缺少运行环境：uv、Node.js、缩略图工具的依赖或 Playwright 的 Chromium
 #   5  上一次同步还没结束，这次没有运行
 #   6  没能从 ShinyColorsDB 拉取完新卡：已拉取的和以前的照常上传，下次同步再拉剩下的
 
@@ -66,9 +66,9 @@ else
   say "找不到 flock（util-linux），不加锁：别同时运行两次"
 fi
 
-if [ ! -d frontend/node_modules/playwright ]; then
-  say "npm ci（frontend 的依赖，渲染缩略图要用）"
-  if ! npm --prefix frontend ci --no-audit --no-fund; then
+if [ ! -d tools/stand-thumbnails/node_modules/playwright ]; then
+  say "npm install（缩略图工具的依赖）"
+  if ! npm --prefix tools/stand-thumbnails install --no-audit --no-fund; then
     finish 4
   fi
 fi
@@ -99,8 +99,9 @@ if ! (cd backend && PYTHONUNBUFFERED=1 uv run --quiet $env_file eidolon stand ou
   finish 1
 fi
 
-say "npm run stand:thumbnails"
-npm --prefix frontend run --silent stand:thumbnails
+say "渲染缩略图"
+build_dir="${EIDOLON_STAND_BUILD_PATH:-$root/corpus/stand}"
+(cd tools/stand-thumbnails && node --experimental-strip-types stand-thumbnails.mts --build "$build_dir")
 thumbnails_code=$?
 case $thumbnails_code in
   0) thumbnails_failed=0 ;;

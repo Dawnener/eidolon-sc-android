@@ -1,12 +1,12 @@
 # 部署到 VPS
 
-生产环境用 `docker-compose.prod.yml`，和本地开发用的 `docker-compose.yml` 分开。它包含四个服务：
+生产环境用 `docker-compose.prod.yml`，和本地开发用的 `docker-compose.yml` 分开。它包含三个服务：
 
-- **caddy**：HTTPS 入口。自动向 Let's Encrypt 申请、续期证书，HTTP 自动跳转到 HTTPS（浏览器只有在 HTTPS 下才允许使用麦克风）。
-- **frontend**、**backend**：只监听 127.0.0.1，不直接暴露在公网上。
+- **caddy**：HTTPS 入口。自动向 Let's Encrypt 申请、续期证书，HTTP 自动跳转到 HTTPS；同时提供下载页、隐私政策、使用条款、APK 和立绘静态文件。
+- **backend**：只监听 127.0.0.1，不直接暴露在公网上。
 - **coturn**：STUN/TURN 服务。手机在移动网络等 NAT 后面时，常常没法和服务器直接建立 UDP 连接，这时语音经 coturn 中继（UDP 或 TCP 的 3478 端口）。只放行 443 端口的网络（部分公司、学校的网络）目前连不上语音，文字对话不受影响。
 
-四个服务都用 host 网络：后端要把本机的公网地址告诉浏览器，coturn 要直接收发 UDP，用 Docker 的端口映射做不到。所以这份配置只适用于 Linux。
+三个服务都用 host 网络：后端要把本机的公网地址告诉浏览器，coturn 要直接收发 UDP，用 Docker 的端口映射做不到。所以这份配置只适用于 Linux。
 
 ## 准备
 
@@ -65,7 +65,7 @@ docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-前端和后端用 CI 发布到 GHCR 的镜像（`ghcr.io/sallyn0225/eidolon-sc-frontend`、`-backend`），服务器上不用构建。镜像只有 linux/amd64 一种。arm64 的服务器，或者想用自己改过的代码时，改用 `up -d --build` 在服务器上构建。
+后端用 CI 发布到 GHCR 的镜像（`ghcr.io/sallyn0225/eidolon-sc-backend`），服务器上不用构建。镜像只有 linux/amd64 一种。arm64 的服务器，或者想用自己改过的代码时，改用 `up -d --build` 在服务器上构建后端。
 
 第一次启动时 Caddy 会申请证书，稍等片刻后用浏览器打开 `https://你的域名`。后端启动失败时（缺少人设文件、对话模型检查不通过、`CHAT_LLM_*` 只填了一部分等），用 `docker compose -f docker-compose.prod.yml logs backend` 查看原因。
 
@@ -212,7 +212,7 @@ docker compose -f docker-compose.prod.yml exec backend eidolon eval memory --jso
 
 改完重启后端。`idol_id` 或 `default_outfit` 格式不对时后端拒绝启动，并说明是哪位角色的哪一项。
 
-前端也读 `EIDOLON_STAND_ASSETS_URL`：全站的 CSP 只许页面向本站发请求，这个地址是唯一的例外（立绘、衣装清单、缩略图和落地页的招呼都从这里加载）。用 docker compose 部署时它会自动传给前端，改了之后前端和后端都要重启；不用 docker 跑前端时，要在前端的环境里也设上它，不然立绘会被浏览器挡掉，通话层退回背景图。
+原生 App 从 `/api/characters` 读取这个地址，不依赖网页 CSP。改了之后重启后端即可；App 会从 Caddy 的 `/stand-assets/` 拉取立绘、衣装清单和缩略图。
 
 ### 选择对象存储
 
@@ -269,13 +269,13 @@ docker compose -f docker-compose.prod.yml exec backend eidolon eval memory --jso
 
 1. `eidolon stand fetch`：每次都向 ShinyColorsDB 的 API 重新要 `characters.toml` 里配了 `idol_id` 的每位角色的卡，从它的 CDN 下载整理目录的 `source/` 里还没有的私服和演出服（不下载 Q 版小人）。衣装的文件不会变，已经有的不再下载；请求一个一个发、间隔约 1 秒，第一次拉 4 位角色要十几分钟，之后只拉新卡。`source/spine_manifest.json` 记着拉到的每套衣装，只增不减：上游哪天不再列某张卡，换衣装面板上也照常有它。上游列了却还没有文件（或发来的文件不对）的衣装跳过并提示，下次同步再试。ShinyColorsDB 连不上或接口变了时，已拉到的照常保留，后面三步用已有的素材照常跑，同步以退出码 6 结束。
 2. `eidolon stand outfits`：从拉取到的立绘为每位配了 `idol_id` 的角色整理衣装清单，写进整理目录。`default_outfit` 不在清单里时会提示。
-3. `npm run stand:thumbnails`（在 `frontend/` 里）：用和通话层同一套播放代码，在无界面的 Chromium 里给每套衣装渲染一张缩略图，渲染前先让动画走约 1 秒，避开待机表情开头的眨眼。已经有缩略图的不再渲染，想全部重画时删掉整理目录里的 `thumbnails/`（或者直接运行 `npm run stand:thumbnails -- --force`）。
+3. `tools/stand-thumbnails`：用和通话层同一套播放代码，在无界面的 Chromium 里给每套衣装渲染一张缩略图，渲染前先让动画走约 1 秒，避开待机表情开头的眨眼。已经有缩略图的不再渲染，想全部重画时删掉整理目录里的 `thumbnails/`（或者加 `--force`）。
 4. `eidolon stand upload`：上传衣装清单列出的每套衣装的文件、缩略图，最后上传衣装清单。缩略图渲染失败的衣装照常上传、照常列在清单里，换衣装面板上暂时没有它的缩略图，下次同步补上。存储桶里已经有、内容相同的（按 ETag 比较 MD5）不重复上传，所以再次同步时只多列一次存储桶。
 
 脚本不经过 docker，直接在服务器或自己的电脑上运行都行（后端只需要知道 `EIDOLON_STAND_ASSETS_URL`）。这台机器上要有：
 
 - [uv](https://docs.astral.sh/uv/)（运行 `eidolon` 命令）和 Node.js 22.18 以上（渲染缩略图）。有 `flock`（util-linux，Linux 一般都自带）时脚本会加锁，防止两次同步重叠；没有时（例如 Windows 的 Git Bash）不加锁照常同步。在 Windows 上用 Git Bash 运行 `sh deploy/stand-sync.sh`。
-- Playwright 的 Chromium：在 `frontend/` 里 `npm ci`，再 `npx playwright install --with-deps chromium`（`--with-deps` 会用 apt 装上它要的系统库，需要 root；装过一次即可）。没有显卡也能渲染。
+- Playwright 的 Chromium：在 `tools/stand-thumbnails/` 里 `npm install`，再 `npx playwright install --with-deps chromium`（`--with-deps` 会用 apt 装上它要的系统库，需要 root；装过一次即可）。没有显卡也能渲染。
 
 在仓库根目录的 `.env` 里填好下面这些（脚本从这里读，环境变量里已有的优先；变量的说明见 `.env.example`）：
 
@@ -307,7 +307,7 @@ tail -f logs/stand-sync.log   # 另开一个终端看进度
 | 1 | 配置出错：缺存储桶的设置、角色配置有误、从来没拉取成功过等，没有上传 | 看日志里的错误 |
 | 2 | 存储桶出错（连不上、密钥不对、没有写权限），这次没传完 | 看日志里存储桶返回的错误（`SignatureDoesNotMatch` 多半是密钥或 `EIDOLON_STAND_S3_REGION` 不对）；已上传的不会重复上传，改好后重新运行即可继续 |
 | 3 | 有衣装的缩略图没渲染出来，其余已照常上传 | 看日志里哪几套失败；下次同步会再渲染 |
-| 4 | 缺少运行环境：uv、Node.js、frontend 的依赖或 Playwright 的 Chromium | 按日志里的提示装上 |
+| 4 | 缺少运行环境：uv、Node.js、缩略图工具的依赖或 Playwright 的 Chromium | 按日志里的提示装上 |
 | 5 | 上一次同步还没结束，这次没有运行 | 不用管 |
 | 6 | 没能从 ShinyColorsDB 拉取完新卡，已有的照常同步 | 偶尔一次不用管，下次同步会再拉；连续几周都是 6，看日志里的错误，多半是 ShinyColorsDB 的接口变了。缩略图也失败时退出码是 3，拉取的错误只在日志里 |
 
@@ -319,7 +319,7 @@ tail -f logs/stand-sync.log   # 另开一个终端看进度
 
 **新增角色**：在 `characters.toml` 里给她配上 `idol_id` 和 `default_outfit`，重新运行 `deploy/stand-sync.sh`（已上传的衣装不会重复上传），再重启后端。
 
-**下架**：收到权利方的要求时，清空存储桶即可，落地页的招呼也在这个存储桶里，会一起下线（见「招呼」的「下线」）。前端加载不到素材，通话层自动退回背景图，不需要改代码或重新部署。之后别再运行同步脚本，也可以把 `EIDOLON_STAND_ASSETS_URL` 清空、重启后端，连换衣装的入口一起去掉。
+**下架**：收到权利方的要求时，清空存储桶即可，落地页的招呼也在这个存储桶里，会一起下线（见「招呼」的「下线」）。客户端加载不到素材时，通话层自动退回背景图，不需要改代码或重新部署。之后别再运行同步脚本，也可以把 `EIDOLON_STAND_ASSETS_URL` 清空、重启后端，连换衣装的入口一起去掉。
 
 ### 本地开发时怎么看效果
 
@@ -334,7 +334,7 @@ npx http-server corpus/stand/source/assets -p 8765 --cors
 EIDOLON_STAND_ASSETS_URL=http://localhost:8765
 ```
 
-然后重启后端，前端启动时也带上同样的 `EIDOLON_STAND_ASSETS_URL`（见上面的 CSP），打开对话页打电话。换一套衣装看效果时，改 `characters.toml` 的 `default_outfit` 再重启后端。这样没有衣装清单和缩略图；要连换衣装一起看，就在本机跑一个 S3 兼容的存储（例如 SeaweedFS：`weed server -s3 -s3.allowedOrigins='*'`，配一个可写的密钥和匿名只读），照上面同步一次，再把 `EIDOLON_STAND_ASSETS_URL` 指向存储桶的地址（例如 `http://localhost:8333/<存储桶>`）。
+然后重启后端，打开 App 的通话页打电话。换一套衣装看效果时，改 `characters.toml` 的 `default_outfit` 再重启后端。这样没有衣装清单和缩略图；要连换衣装一起看，就在本机跑一个 S3 兼容的存储（例如 SeaweedFS：`weed server -s3 -s3.allowedOrigins='*'`，配一个可写的密钥和匿名只读），照上面同步一次，再把 `EIDOLON_STAND_ASSETS_URL` 指向存储桶的地址（例如 `http://localhost:8333/<存储桶>`）。
 
 ## 招呼
 
@@ -642,7 +642,7 @@ db.commit()
 
 ### 镜像的可见性
 
-CI 第一次发布后，GHCR 上的两个包跟随仓库，默认是私有的，服务器拉不下来。到 GitHub 个人主页的 Packages，分别打开 `eidolon-sc-backend` 和 `eidolon-sc-frontend`，在 Package settings 的 Danger Zone 里改成 Public。公开的包不占账号的存储和流量额度，服务器不用登录就能拉取。改成公开后不能再改回私有。注意后端镜像里有 `backend/src` 的全部源代码，前端镜像里有构建后的前端代码：包公开就等于这部分代码公开了，即使仓库还是私有的。
+CI 第一次发布后，GHCR 上的 `eidolon-sc-backend` 包跟随仓库，默认是私有的，服务器拉不下来。到 GitHub 个人主页的 Packages 打开它，在 Package settings 的 Danger Zone 里改成 Public。公开的包不占账号的存储和流量额度，服务器不用登录就能拉取。改成公开后不能再改回私有。注意后端镜像里有 `backend/src` 的全部源代码：包公开就等于这部分代码公开了，即使仓库还是私有的。
 
 不想公开时，包保持私有，在服务器上用一个只有 `read:packages` 权限的 GitHub 令牌（classic personal access token）登录一次：`echo <令牌> | docker login ghcr.io -u <GitHub 用户名> --password-stdin`。
 
@@ -817,7 +817,7 @@ EIDOLON_BACKUP_WARN_GB=3      # 存储桶里备份的总量超过它就提醒，
 6. **把 DNS 切到新服务器**，确认网站正常后，在新服务器上装好 cron（照「备份」的第 7 步，`--cron` 别漏）和剧情同步的 cron（「每周自动同步」），手动跑一次 `deploy/db-backup.sh` 确认新服务器的备份能用。
 7. **停掉旧服务器**：`docker compose -f docker-compose.prod.yml down`（**不要**带 `-v`），删掉它的 cron。
 
-第 2 步之后旧服务器还开着，用户在这段时间里的新对话、新注册都只在旧库里，新服务器上没有。想一条不丢，就先让旧服务器停止服务、再做第 2 步：`docker compose -f docker-compose.prod.yml stop caddy frontend`（网站打不开了，后端还在，备份还能做），然后运行 `deploy/db-backup.sh`（后台的按钮这时也打不开），用这一份恢复。代价是从这时起到 DNS 切过去，网站都打不开；不停的话，第 2 步之后旧服务器上的新数据就留在旧库里，不会搬过来。
+第 2 步之后旧服务器还开着，用户在这段时间里的新对话、新注册都只在旧库里，新服务器上没有。想一条不丢，就先让旧服务器停止服务、再做第 2 步：`docker compose -f docker-compose.prod.yml stop caddy`（网站打不开了，后端还在，备份还能做），然后运行 `deploy/db-backup.sh`（后台的按钮这时也打不开），用这一份恢复。代价是从这时起到 DNS 切过去，网站都打不开；不停的话，第 2 步之后旧服务器上的新数据就留在旧库里，不会搬过来。
 
 ## 排障
 

@@ -109,4 +109,4 @@ echo
 echo "完成。之后每个新 shell 先执行："
 echo "  source $ENV_FILE"
 echo "然后构建 APK："
-echo "  cd $REPO_ROOT/android && ./gradlew assembleDebug"
+echo "  cd $REPO_ROOT/android && ./gradlew :native:assembleDebug"

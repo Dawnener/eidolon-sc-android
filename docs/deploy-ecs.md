@@ -41,7 +41,10 @@ docker compose version
 corpus/stand/source/assets/spine/...
 corpus/stand/outfits/...
 corpus/stand/thumbnails/...
+android/native/build/outputs/apk/release/native-release.apk
 ```
+
+APK 从本机 `android/native/build/outputs/apk/` 上传到服务器同一路径；Caddy 会从 `/apk/native/release/native-release.apk` 提供下载。
 
 如果素材还在旧机器上，先把整个 `corpus/stand` 传过来。3M 上行传 1.6G 会比较久，建议用 OSS 或压缩后 scp。
 
@@ -72,11 +75,10 @@ docker compose -f docker-compose.prod.yml build
 
 # 推到自己仓库后，在 .env 里指定
 EIDOLON_BACKEND_IMAGE=ghcr.io/你的账号/eidolon-sc-backend
-EIDOLON_FRONTEND_IMAGE=ghcr.io/你的账号/eidolon-sc-frontend
 EIDOLON_IMAGE_TAG=main
 ```
 
-2G 机器上直接 `next build` 容易 OOM；能本地构建就不要在 ECS 上构建。
+2G 机器上构建后端镜像也可能比较慢；能本地构建就不要在 ECS 上构建。
 
 ## 6. 启动
 

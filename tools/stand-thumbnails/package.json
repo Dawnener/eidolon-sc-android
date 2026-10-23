@@ -1,0 +1,12 @@
+{
+  "name": "eidolon-stand-thumbnails",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-strip-types stand-thumbnails.mts"
+  },
+  "dependencies": {
+    "playwright": "^1.55.0",
+    "typescript": "^5.9.0"
+  }
+}

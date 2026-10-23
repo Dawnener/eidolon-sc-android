@@ -1,10 +1,10 @@
 # 生产环境（VPS）：docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
-# 前端和后端用 CI 发布到 GHCR 的镜像，默认是 main 分支最新的一版；在 .env 里设 EIDOLON_IMAGE_TAG 可以固定到某一版
+# 后端用 CI 发布到 GHCR 的镜像，默认是 main 分支最新的一版；在 .env 里设 EIDOLON_IMAGE_TAG 可以固定到某一版
 # （例如 sha-29d651a）。改了代码想在服务器上直接构建时用 up -d --build。
 # 部署步骤见 docs/deploy.md。所有密钥都来自仓库根目录的 .env，不写进这个文件。
 #
-# 四个服务都用 host 网络：语音通话走 WebRTC（UDP），后端需要把本机的公网地址作为候选地址告诉浏览器，
-# coturn 也需要直接收发 UDP。前端和后端只监听 127.0.0.1，公网上只开放 Caddy（80、443）和 coturn（3478 与中继端口）。
+# 三个服务都用 host 网络：语音通话走 WebRTC（UDP），后端需要把本机的公网地址作为候选地址告诉浏览器，
+# coturn 也需要直接收发 UDP。后端只监听 127.0.0.1，公网上只开放 Caddy（80、443）和 coturn（3478 与中继端口）。
 
 # 每个容器的日志最多留 5 个 10 MB 的文件，免得写满磁盘
 x-logging: &logging
@@ -23,26 +23,13 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       # 同机托管立绘素材时用；用 OSS/R2/CDN 时这些挂载可以为空。
       # 衣装文件在 source/assets 下，清单和缩略图在整理目录根下，挂到同一个公开前缀。
-      - ./corpus/stand/source/assets:/srv/stand-assets:ro
+      - ./corpus/stand/source/assets/spine:/srv/stand-assets/spine:ro
       - ./corpus/stand/outfits:/srv/stand-assets/outfits:ro
       - ./corpus/stand/thumbnails:/srv/stand-assets/thumbnails:ro
+      - ./android/native/build/outputs/apk:/srv/apk:ro
+      - ./deploy/web:/srv/web:ro
       - caddy-data:/data # 证书
       - caddy-config:/config
-    depends_on:
-      - frontend
-    restart: unless-stopped
-    logging: *logging
-
-  frontend:
-    image: ${EIDOLON_FRONTEND_IMAGE:-ghcr.io/sallyn0225/eidolon-sc-frontend}:${EIDOLON_IMAGE_TAG:-main}
-    build: ./frontend
-    network_mode: host
-    environment:
-      HOSTNAME: 127.0.0.1
-      PORT: 3000
-      BACKEND_URL: http://127.0.0.1:8000
-      # 写进 CSP：页面只许从这里另外加载立绘、缩略图和招呼
-      EIDOLON_STAND_ASSETS_URL: ${EIDOLON_STAND_ASSETS_URL:-}
     depends_on:
       - backend
     restart: unless-stopped
@@ -62,7 +49,7 @@ services:
       EIDOLON_TURN_URLS: ${EIDOLON_TURN_URLS:-turn:${EIDOLON_PUBLIC_IP}:3478?transport=udp,turn:${EIDOLON_PUBLIC_IP}:3478?transport=tcp}
       EIDOLON_TURN_SECRET: ${EIDOLON_TURN_SECRET:?请在 .env 里填写 EIDOLON_TURN_SECRET}
     volumes:
-      - eidolon-data:/data # 数据库（用户、对话、记忆、剧情库）和同步下载的原始剧本缓存 /data/mirror
+      - ./data:/data # 数据库（用户、对话、记忆、剧情库）和同步下载的原始剧本缓存 /data/mirror
       - ./characters:/characters:ro # 人设、角色资料、头像
       - ./corpus:/corpus:ro # SCTranslationData 等剧情库的原始数据，导入和同步时读取（deploy/story-sync.sh 在主机上更新）
       - ./deploy:/deploy:ro # 活动名对照表 event-names.toml（同步时读取）
@@ -112,6 +99,5 @@ services:
     logging: *logging
 
 volumes:
-  eidolon-data:
   caddy-data:
   caddy-config:

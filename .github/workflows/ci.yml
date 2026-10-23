@@ -1,5 +1,5 @@
-# 每个 PR 和 main 上的每次推送：检查后端、前端和 shell 脚本，同时构建两个镜像。
-# 推送到 main 或 v* 标签时，检查和构建全部通过才把镜像推到 GHCR（部署见 docs/deploy.md「升级」）。
+# 每个 PR 和 main 上的每次推送：检查后端和 shell 脚本，再构建后端镜像。
+# 推送到 main 或 v* 标签时，检查全部通过才把镜像推到 GHCR（部署见 docs/deploy.md「升级」）。
 name: CI
 
 on:
@@ -37,30 +37,11 @@ jobs:
       # 每个 CPU 一个进程并行跑（pytest-xdist）；单个测试 2 分钟还没结束时打印所有线程的栈，挂住时能看出卡在哪里
       - run: uv run pytest -n auto -o faulthandler_timeout=120
 
-  frontend:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-      # shadcn 纪律里能机器检查的几条：cn 的导入、任意值里的颜色、important 类、不再引用 Astryx（frontend/AGENTS.md）
-      - run: sh scripts/check-discipline.sh
-      # next build 由下面的镜像构建跑
-
   shellcheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: shellcheck deploy/*.sh scripts/*.sh frontend/scripts/*.sh
+      - run: shellcheck deploy/*.sh scripts/*.sh
       # wayfinder 地图的票：已解决的有结论、Blocked by 的票号存在、地图链接到它（docs/agents/issue-tracker.md）
       - run: sh scripts/check-scratch.sh
 
@@ -69,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [backend, frontend]
+        service: [backend]
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
@@ -83,14 +64,14 @@ jobs:
   # 推送到 main 或 v* 标签、上面全部通过时：按 image 的缓存再构建一次（通常层都命中，缓存被清掉时整个重建），推到 GHCR
   publish:
     if: github.event_name == 'push'
-    needs: [backend, frontend, shellcheck, image]
+    needs: [backend, shellcheck, image]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     strategy:
       matrix:
-        service: [backend, frontend]
+        service: [backend]
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4

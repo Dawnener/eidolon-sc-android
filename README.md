@@ -12,8 +12,6 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](backend/pyproject.toml)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Pipecat](https://img.shields.io/badge/Pipecat-WebRTC-6E56CF?style=flat-square)](https://github.com/pipecat-ai/pipecat)
-[![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs&logoColor=white)](frontend/package.json)
-[![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)](frontend/package.json)
 [![Docker Compose](https://img.shields.io/badge/Docker_Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](docker-compose.yml)
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL--3.0--or--later-A42E2B?style=flat-square&logo=gnu&logoColor=white)](LICENSE)
 
@@ -146,10 +144,9 @@ docker compose up --build
 
 ```mermaid
 flowchart LR
-    subgraph Browser["浏览器 · Next.js"]
-        Landing["落地页"]
-        UI["对话列表 · 对话 · 通话层"]
-        Admin["后台"]
+    subgraph Client["客户端"]
+        Download["下载页 · 隐私政策"]
+        UI["Android App<br/>对话列表 · 对话 · 通话层"]
     end
 
     subgraph Backend["后端 · FastAPI + Pipecat"]
@@ -164,7 +161,6 @@ flowchart LR
     Bucket[("对象存储<br/>立绘 · 招呼")]
 
     UI -- "文字回合 /api/*" --> API
-    Admin --> API
     UI <-- "WebRTC 语音 + 字幕" --> Call
     Landing & UI -. "立绘、招呼音频" .-> Bucket
     API --> Engine
@@ -199,7 +195,7 @@ flowchart LR
 
 ## 🌐 部署
 
-生产配置 [`docker-compose.prod.yml`](docker-compose.prod.yml) 包含 caddy（HTTPS 入口）、frontend、backend 和 coturn（TURN 中继）四个服务，前后端镜像由 CI 发布到 GHCR：
+生产配置 [`docker-compose.prod.yml`](docker-compose.prod.yml) 包含 caddy（HTTPS 入口和下载页）、backend 和 coturn（TURN 中继）三个服务，后端镜像由 CI 发布到 GHCR：
 
 ```sh
 docker compose -f docker-compose.prod.yml pull
@@ -219,20 +215,22 @@ uv run pytest && uv run pyright && uv run ruff check
 uv run --env-file=../.env eidolon serve   # 启动在 :8000，读取 ../characters/characters.toml
 ```
 
-**前端**（Next.js 16 + [shadcn/ui](https://ui.shadcn.com/) + Tailwind CSS v4，`frontend/`）：
+**Android 客户端**（Kotlin + Compose，`android/native/`）：
 
 ```sh
-cd frontend
-npm install
-npm run typecheck && npm test && sh scripts/check-discipline.sh
-npm run build && BACKEND_URL=http://localhost:8000 npm run start   # 启动在 :3000，/api/* 转发给后端
+cd android
+./gradlew :native:testDebugUnitTest :native:assembleRelease
 ```
 
-- **界面**：克制的 LINE 风格，属于她的地方用她的印象色；落地页自成一个永远深色的视觉世界（[ADR-0016](docs/adr/0016-landing-page-is-its-own-visual-world.md)）。视觉规范见 [`DESIGN.md`](DESIGN.md)，组件写法的约定见 [`frontend/AGENTS.md`](frontend/AGENTS.md)。
-- **立绘**：要看立绘时，前端也要带上和 `.env` 一样的 `EIDOLON_STAND_ASSETS_URL`。
-- **README 的截图**：前后端都跑起来后，在 `frontend/` 下运行 `npm run readme-media`，会重新拍下 `docs/images/` 里的截图和动图。
-- **Android 壳**：想在手机上看前端时，用 `android/` 里的 WebView 包装和 `scripts/dev-local.sh` 起的本地栈；构建、安装和防火墙见 [`android/README.md`](android/README.md)。
-- **CI**：每个 PR 和 main 上的推送都由 GitHub Actions 跑上面这些检查和 shellcheck，再构建两个镜像；推送到 main 或 `v*` 标签时发布到 GHCR。Dependabot 每周一提依赖更新。
+APK 在 `android/native/build/outputs/apk/release/`。构建、安装和局域网调试见 [`android/README.md`](android/README.md)。
+
+后端和 Caddy 的本地栈：
+
+```sh
+bash scripts/dev-local.sh start
+```
+
+后端在 `:8000`，Caddy 在 `:8080`，提供 API、立绘、APK 和下载页。
 
 ## 📁 项目结构
 
@@ -242,7 +240,8 @@ eidolon-sc/
 │   ├── src/eidolon/
 │   ├── eval/         #   重排、判断模型和记忆的评测集（只含问题与标注，不含剧情原文）
 │   └── tests/
-├── frontend/         # Next.js 前端：落地页、对话、通话层、设置、后台
+├── android/          # 原生 Android 客户端（Kotlin + Compose）
+├── tools/            # 独立工具：立绘缩略图渲染
 ├── characters/       # 角色配置、人设、资料、头像、读音表、世界设定
 ├── corpus/           # 剧情数据和镜像缓存（不进仓库）
 ├── deploy/           # Caddyfile、剧情库与立绘的同步脚本、数据库备份脚本
@@ -259,8 +258,7 @@ eidolon-sc/
 许可证只覆盖仓库里的代码和文档，下面这些不在范围内：
 
 - **原作的内容**：剧情数据、角色音色、立绘素材不在仓库中，使用时须遵守各自来源的条款（ADR-0003）。仓库里的人设、角色资料、头像和 README 的截图里，角色与设定属于原作版权方。
-- **Spine Runtimes**：通话层立绘用的 [`frontend/public/vendor/spine-3.6/`](frontend/public/vendor/spine-3.6/README.md) 原样收录，适用它自己的 Spine Runtimes 许可证（[ADR-0009](docs/adr/0009-spine-runtime-without-editor-license.md)）。[`LICENSING.md`](LICENSING.md) 里有一条 AGPL 第 7 节的附加许可，允许两者组合分发。
-- **字体和音效**：落地页的字体子集适用 SIL Open Font License（见 `frontend/src/app/(landing)/fonts/`）；通话音效的来源和许可见 [`CREDITS.md`](frontend/public/sounds/CREDITS.md)。
+- **Spine Runtimes**：通话层立绘用的 [`android/native/src/main/assets/stand/`](android/native/src/main/assets/stand/README.md) 原样收录，适用它自己的 Spine Runtimes 许可证（[ADR-0009](docs/adr/0009-spine-runtime-without-editor-license.md)）。[`LICENSING.md`](LICENSING.md) 里有一条 AGPL 第 7 节的附加许可，允许两者组合分发。
 
 ## 🙏 致谢
 
