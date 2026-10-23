@@ -12,8 +12,6 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](backend/pyproject.toml)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Pipecat](https://img.shields.io/badge/Pipecat-WebRTC-6E56CF?style=flat-square)](https://github.com/pipecat-ai/pipecat)
-[![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs&logoColor=white)](frontend/package.json)
-[![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)](frontend/package.json)
 [![Docker Compose](https://img.shields.io/badge/Docker_Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](docker-compose.yml)
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL--3.0--or--later-A42E2B?style=flat-square&logo=gnu&logoColor=white)](LICENSE)
 
@@ -146,10 +144,9 @@ docker compose up --build
 
 ```mermaid
 flowchart LR
-    subgraph Browser["ブラウザ · Next.js"]
-        Landing["ランディングページ"]
-        UI["会話一覧 · 会話 · 通話画面"]
-        Admin["管理画面"]
+    subgraph Client["クライアント"]
+        Download["ダウンロードページ · プライバシーポリシー"]
+        UI["Android アプリ<br/>会話一覧 · 会話 · 通話画面"]
     end
 
     subgraph Backend["バックエンド · FastAPI + Pipecat"]
@@ -164,9 +161,8 @@ flowchart LR
     Bucket[("オブジェクトストレージ<br/>立ち絵 · あいさつ")]
 
     UI -- "テキストのターン /api/*" --> API
-    Admin --> API
     UI <-- "WebRTC 音声 + 字幕" --> Call
-    Landing & UI -. "立ち絵、あいさつの音声" .-> Bucket
+    Download & UI -. "立ち絵、あいさつの音声" .-> Bucket
     API --> Engine
     Call -- "音声認識<br/>Soniox または Alibaba Cloud Model Studio" --> Engine
     Engine -- "Fish Audio 音声合成<br/>（読み表つき）" --> Call
@@ -199,7 +195,7 @@ flowchart LR
 
 ## 🌐 デプロイ
 
-本番構成 [`docker-compose.prod.yml`](docker-compose.prod.yml) は caddy（HTTPS の入口）、frontend、backend、coturn（TURN 中継）の 4 つのサービスからなり、フロントエンドとバックエンドのイメージは CI が GHCR に公開します：
+本番構成 [`docker-compose.prod.yml`](docker-compose.prod.yml) は caddy（HTTPS の入口とダウンロードページ）、backend、coturn（TURN 中継）の 3 つのサービスからなり、バックエンドのイメージは CI が GHCR に公開します：
 
 ```sh
 docker compose -f docker-compose.prod.yml pull
@@ -219,19 +215,22 @@ uv run pytest && uv run pyright && uv run ruff check
 uv run --env-file=../.env eidolon serve   # :8000 で起動し、../characters/characters.toml を読み込む
 ```
 
-**フロントエンド**（Next.js 16 + [shadcn/ui](https://ui.shadcn.com/) + Tailwind CSS v4、`frontend/`）：
+**Android クライアント**（Kotlin + Compose、`android/native/`）：
 
 ```sh
-cd frontend
-npm install
-npm run typecheck && npm test && sh scripts/check-discipline.sh
-npm run build && BACKEND_URL=http://localhost:8000 npm run start   # :3000 で起動し、/api/* をバックエンドへ転送
+cd android
+./gradlew :native:testDebugUnitTest :native:assembleRelease
 ```
 
-- **画面**：控えめな LINE 風のデザインで、彼女に属する場所には彼女のイメージカラーを使います。ランディングページは常にダークの、独立したビジュアルの世界です（[ADR-0016](docs/adr/0016-landing-page-is-its-own-visual-world.md)）。ビジュアル仕様は [`DESIGN.md`](DESIGN.md)、コンポーネントの書き方の決まりは [`frontend/AGENTS.md`](frontend/AGENTS.md) にあります。
-- **立ち絵**：立ち絵を見るときは、フロントエンドにも `.env` と同じ `EIDOLON_STAND_ASSETS_URL` を渡します。
-- **README のスクリーンショット**：フロントエンドとバックエンドを両方起動したあと、`frontend/` で `npm run readme-media` を実行すると、`docs/images/` のスクリーンショットとアニメーションを撮り直します。
-- **CI**：PR と main へのプッシュごとに、GitHub Actions が上記のチェックと shellcheck を実行し、2 つのイメージをビルドします。main と `v*` タグへのプッシュでは GHCR に公開します。Dependabot が毎週月曜に依存関係の更新を提案します。
+APK は `android/native/build/outputs/apk/release/` に出力されます。ビルド、インストール、ローカルネットワークでのデバッグは [`android/README.md`](android/README.md) を参照してください。
+
+バックエンドと Caddy のローカル構成：
+
+```sh
+bash scripts/dev-local.sh start
+```
+
+バックエンドは `:8000`、Caddy は `:8080` で起動し、API、立ち絵、APK、ダウンロードページを提供します。
 
 ## 📁 ディレクトリ構成
 
@@ -241,7 +240,8 @@ eidolon-sc/
 │   ├── src/eidolon/
 │   ├── eval/         #   並べ替え・判断モデル・メモリーの評価用データセット（質問とラベルのみ、シナリオ本文は含まない）
 │   └── tests/
-├── frontend/         # Next.js フロントエンド：ランディングページ、会話、通話画面、設定、管理画面
+├── android/          # ネイティブ Android クライアント（Kotlin + Compose）
+├── tools/            # 独立したツール：立ち絵サムネイルのレンダラー
 ├── characters/       # キャラクター設定、キャラクターシート、資料、アイコン、読み表、世界設定
 ├── corpus/           # シナリオデータとミラーのキャッシュ（リポジトリ外）
 ├── deploy/           # Caddyfile、シナリオライブラリと立ち絵の同期スクリプト、データベースのバックアップスクリプト
@@ -258,8 +258,7 @@ eidolon-sc/
 ライセンスの対象はリポジトリ内のコードとドキュメントだけで、次のものは対象外です：
 
 - **原作のコンテンツ**：シナリオデータ、キャラクター音声、立ち絵素材はリポジトリに含まれておらず、利用時はそれぞれの提供元の条件に従う必要があります（ADR-0003）。リポジトリ内のキャラクターシート・キャラクター資料・アイコンと README のスクリーンショットについても、キャラクターと設定は原作の権利者に帰属します。
-- **Spine Runtimes**：通話画面の立ち絵に使う [`frontend/public/vendor/spine-3.6/`](frontend/public/vendor/spine-3.6/README.md) は無改変で収録しており、それ自身の Spine Runtimes ライセンスが適用されます（[ADR-0009](docs/adr/0009-spine-runtime-without-editor-license.md)）。[`LICENSING.md`](LICENSING.md) に AGPL 第 7 条の追加許可があり、両者を組み合わせて頒布することを認めています。
-- **フォントと効果音**：ランディングページのフォントサブセットには SIL Open Font License が適用されます（`frontend/src/app/(landing)/fonts/` を参照）。通話の効果音の出典とライセンスは [`CREDITS.md`](frontend/public/sounds/CREDITS.md) を参照してください。
+- **Spine Runtimes**：通話画面の立ち絵に使う [`android/native/src/main/assets/stand/`](android/native/src/main/assets/stand/README.md) は無改変で収録しており、それ自身の Spine Runtimes ライセンスが適用されます（[ADR-0009](docs/adr/0009-spine-runtime-without-editor-license.md)）。[`LICENSING.md`](LICENSING.md) に AGPL 第 7 条の追加許可があり、両者を組み合わせて頒布することを認めています。
 
 ## 🙏 謝辞
 

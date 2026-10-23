@@ -12,8 +12,6 @@ Voice · Text · Story recall · Memory shared across characters
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](backend/pyproject.toml)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Pipecat](https://img.shields.io/badge/Pipecat-WebRTC-6E56CF?style=flat-square)](https://github.com/pipecat-ai/pipecat)
-[![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs&logoColor=white)](frontend/package.json)
-[![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)](frontend/package.json)
 [![Docker Compose](https://img.shields.io/badge/Docker_Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](docker-compose.yml)
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL--3.0--or--later-A42E2B?style=flat-square&logo=gnu&logoColor=white)](LICENSE)
 
@@ -146,10 +144,9 @@ How to configure each one and what it does is in the **[Configuration guide](doc
 
 ```mermaid
 flowchart LR
-    subgraph Browser["Browser · Next.js"]
-        Landing["Landing page"]
-        UI["Conversation list · Conversation · Call screen"]
-        Admin["Admin console"]
+    subgraph Client["Client"]
+        Download["Download page · Privacy policy"]
+        UI["Android app<br/>Conversation list · Conversation · Call screen"]
     end
 
     subgraph Backend["Backend · FastAPI + Pipecat"]
@@ -164,9 +161,8 @@ flowchart LR
     Bucket[("Object storage<br/>stands · greetings")]
 
     UI -- "text turns /api/*" --> API
-    Admin --> API
     UI <-- "WebRTC audio + subtitles" --> Call
-    Landing & UI -. "stands, greeting audio" .-> Bucket
+    Download & UI -. "stands, greeting audio" .-> Bucket
     API --> Engine
     Call -- "Speech recognition<br/>Soniox or Alibaba Cloud Model Studio" --> Engine
     Engine -- "Fish Audio speech synthesis<br/>(with readings table)" --> Call
@@ -199,7 +195,7 @@ flowchart LR
 
 ## 🌐 Deployment
 
-The production config [`docker-compose.prod.yml`](docker-compose.prod.yml) has four services: caddy (HTTPS entry point), frontend, backend and coturn (TURN relay). CI publishes the frontend and backend images to GHCR:
+The production config [`docker-compose.prod.yml`](docker-compose.prod.yml) has three services: caddy (HTTPS entry point and download pages), backend and coturn (TURN relay). CI publishes the backend image to GHCR:
 
 ```sh
 docker compose -f docker-compose.prod.yml pull
@@ -219,19 +215,22 @@ uv run pytest && uv run pyright && uv run ruff check
 uv run --env-file=../.env eidolon serve   # serves on :8000, reads ../characters/characters.toml
 ```
 
-**Frontend** (Next.js 16 + [shadcn/ui](https://ui.shadcn.com/) + Tailwind CSS v4, `frontend/`):
+**Android client** (Kotlin + Compose, `android/native/`):
 
 ```sh
-cd frontend
-npm install
-npm run typecheck && npm test && sh scripts/check-discipline.sh
-npm run build && BACKEND_URL=http://localhost:8000 npm run start   # serves on :3000, forwards /api/* to the backend
+cd android
+./gradlew :native:testDebugUnitTest :native:assembleRelease
 ```
 
-- **Interface**: A restrained LINE-like style, with her image color in the places that belong to her. The landing page is a visual world of its own, always dark ([ADR-0016](docs/adr/0016-landing-page-is-its-own-visual-world.md)). The visual design system is in [`DESIGN.md`](DESIGN.md); component conventions are in [`frontend/AGENTS.md`](frontend/AGENTS.md).
-- **Stands**: To see stands, give the frontend the same `EIDOLON_STAND_ASSETS_URL` as in `.env`.
-- **README screenshots**: With the frontend and backend both running, run `npm run readme-media` in `frontend/`. It recaptures the screenshots and animations in `docs/images/`.
-- **CI**: For every PR and every push to main, GitHub Actions runs the checks above and shellcheck, then builds both images. Pushes to main and `v*` tags publish them to GHCR. Dependabot opens dependency updates every Monday.
+The APK is written to `android/native/build/outputs/apk/release/`. For building, installing and debugging on a local network, see [`android/README.md`](android/README.md).
+
+Backend and Caddy for local development:
+
+```sh
+bash scripts/dev-local.sh start
+```
+
+The backend runs on `:8000`; Caddy runs on `:8080` and serves the API, stands, APK and download pages.
 
 ## 📁 Project layout
 
@@ -241,7 +240,8 @@ eidolon-sc/
 │   ├── src/eidolon/
 │   ├── eval/         #   eval sets for reranking, the judge and memory (questions and labels only, no story text)
 │   └── tests/
-├── frontend/         # Next.js frontend: landing page, conversations, call screen, settings, admin console
+├── android/          # native Android client (Kotlin + Compose)
+├── tools/            # standalone tools: stand thumbnail renderer
 ├── characters/       # character config, character sheets, character facts, avatars, readings table, world setting
 ├── corpus/           # story data and the mirror cache (not committed)
 ├── deploy/           # Caddyfile, story corpus and stand sync scripts, database backup script
@@ -258,8 +258,7 @@ The code in this project is released under the [GNU Affero General Public Licens
 The license covers only the code and documentation in the repository. The following are outside its scope:
 
 - **Content from the game**: Story data, character voices and stand assets are not in the repository; when using them, follow the terms of their respective sources (ADR-0003). In the character sheets, character facts, avatars and README screenshots in the repository, the characters and settings belong to the game's rights holders.
-- **Spine Runtimes**: [`frontend/public/vendor/spine-3.6/`](frontend/public/vendor/spine-3.6/README.md), used for the call-screen stand, is included unmodified and is under its own Spine Runtimes license ([ADR-0009](docs/adr/0009-spine-runtime-without-editor-license.md)). [`LICENSING.md`](LICENSING.md) grants an additional permission under section 7 of the AGPL that allows the two to be distributed combined.
-- **Fonts and sound effects**: The landing page's font subsets are under the SIL Open Font License (see `frontend/src/app/(landing)/fonts/`). For the sources and licenses of the call sound effects, see [`CREDITS.md`](frontend/public/sounds/CREDITS.md).
+- **Spine Runtimes**: [`android/native/src/main/assets/stand/`](android/native/src/main/assets/stand/README.md), used for the call-screen stand, is included unmodified and is under its own Spine Runtimes license ([ADR-0009](docs/adr/0009-spine-runtime-without-editor-license.md)). [`LICENSING.md`](LICENSING.md) grants an additional permission under section 7 of the AGPL that allows the two to be distributed combined.
 
 ## 🙏 Acknowledgements
 
