@@ -8,8 +8,17 @@
 - 安全组入方向：
   - TCP 80、443：Caddy
   - TCP 3478、UDP 3478：coturn
+  - TCP 5349：coturn 的 TURN over TLS（443 已被 Caddy 占用，所以用标准的 5349）
   - UDP 49160–49259：coturn 中继端口
 - 磁盘 40G 起步；立绘素材约 1.6G。
+
+coturn 的 TLS 证书从 Caddy 的 `caddy-data` 卷复制到 `deploy/coturn-certs/`，由
+`deploy/sync-coturn-certs.sh` 完成。Caddy 自动续期后要让 coturn 重新读取，建议加进
+root 的 cron，每天跑一次：
+
+```cron
+17 4 * * * /home/admin/eidolon-sc/deploy/sync-coturn-certs.sh >> /var/log/coturn-certs.log 2>&1
+```
 
 ## 2. 系统准备（Ubuntu / Debian）
 
@@ -43,10 +52,10 @@ corpus/stand/outfits/...
 corpus/stand/thumbnails/...
 corpus/stand/greetings/...
 corpus/stand/call-openers/...
-android/native/build/outputs/apk/release/Eidolon-SC-0.1.5-release.apk
+android/native/build/outputs/apk/release/Eidolon-SC-0.1.6-release.apk
 ```
 
-APK 从本机 `android/native/build/outputs/apk/release/` 上传到服务器同一路径；Caddy 会从 `/apk/native/release/Eidolon-SC-0.1.5-release.apk` 提供下载。招呼和开场白的 mp3 用 `eidolon greeting upload --build ../corpus/stand` 生成，Caddy 从 `/stand-assets/greetings/` 和 `/stand-assets/call-openers/` 提供。
+APK 从本机 `android/native/build/outputs/apk/release/` 上传到服务器同一路径；Caddy 会从 `/apk/native/release/Eidolon-SC-0.1.6-release.apk` 提供下载。招呼和开场白的 mp3 用 `eidolon greeting upload --build ../corpus/stand` 生成，Caddy 从 `/stand-assets/greetings/` 和 `/stand-assets/call-openers/` 提供。
 
 如果素材还在旧机器上，先把整个 `corpus/stand` 传过来。3M 上行传 1.6G 会比较久，建议用 OSS 或压缩后 scp。
 

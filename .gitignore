@@ -36,3 +36,6 @@ __pycache__/
 
 # 缩略图工具的依赖
 /tools/stand-thumbnails/node_modules/
+
+# coturn 的 TLS 证书从 Caddy 卷复制，私钥不进仓库
+deploy/coturn-certs/

@@ -118,6 +118,7 @@ fun CallScreen(
     val person = character
     val her = herColors(person?.color ?: "#7FB4FF")
     var connected by remember { mutableStateOf(false) }
+    var reconnecting by remember { mutableStateOf(false) }
     var connectedAt by remember { mutableStateOf<Long?>(null) }
     var callEnded by remember { mutableStateOf(false) }
     var callError by remember { mutableStateOf<String?>(null) }
@@ -195,13 +196,22 @@ fun CallScreen(
     val listener = remember {
         object : CallListener {
             override fun onDialing() {
+                reconnecting = false
+                callError = null
+                callEnded = false
+            }
+
+            override fun onReconnecting() {
+                connected = false
+                reconnecting = true
                 callError = null
                 callEnded = false
             }
 
             override fun onConnected(callMaxSeconds: Int?, exempt: Boolean) {
                 connected = true
-                connectedAt = SystemClock.elapsedRealtime()
+                reconnecting = false
+                connectedAt = connectedAt ?: SystemClock.elapsedRealtime()
                 maxSeconds = callMaxSeconds
                 callError = null
                 callEnded = false
@@ -254,6 +264,7 @@ fun CallScreen(
 
             override fun onEnded(message: String?) {
                 connected = false
+                reconnecting = false
                 speaking = false
                 callEnded = true
                 if (!message.isNullOrBlank()) callError = message
@@ -261,6 +272,7 @@ fun CallScreen(
 
             override fun onError(message: String) {
                 connected = false
+                reconnecting = false
                 speaking = false
                 callEnded = true
                 callError = message
@@ -311,12 +323,14 @@ fun CallScreen(
     val shownJa = replyJa.ifBlank { openerJa }
     val shownZh = if (replyJa.isNotBlank()) replyZh else openerZh
     val statusLabel = when {
+        reconnecting -> "正在重新连接…"
         connected -> "通话中"
         callEnded && connectedAt != null -> "通话已结束"
         callEnded -> "未能接通"
         else -> "正在呼叫…"
     }
     val statusDetail = when {
+        reconnecting -> "保持通话页，稍候"
         connected -> buildString {
             append(formatCallTime(seconds))
             maxSeconds?.let { append(" / ").append(formatCallTime(it)) }

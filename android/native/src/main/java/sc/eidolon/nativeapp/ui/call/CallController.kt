@@ -18,7 +18,9 @@ import ai.pipecat.client.small_webrtc_transport.SmallWebRTCTransport
 import ai.pipecat.client.small_webrtc_transport.SmallWebRTCTransportConnectParams
 import ai.pipecat.client.types.APIRequest
 import ai.pipecat.client.types.BotReadyData
+import ai.pipecat.client.types.Participant
 import ai.pipecat.client.types.Transcript
+import ai.pipecat.client.types.TransportState
 import ai.pipecat.client.types.Value
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +50,7 @@ import sc.eidolon.nativeapp.model.OwnKeysRules
 /** The call screen listens to these; all are delivered on the main thread. */
 interface CallListener {
     fun onDialing()
+    fun onReconnecting()
     fun onConnected(maxSeconds: Int?, exempt: Boolean)
     fun onSpeaking(speaking: Boolean)
     fun onHearing(text: String)
@@ -83,10 +86,31 @@ class CallController(
     private var ready = false
     private var released = false
     private var closing = false
+    private var reconnecting = false
+    private var everConnected = false
+    private var callOver = false
+    private var reconnectAttempts = 0
+    private var generation = 0
+    private var conversationId: String? = null
 
     fun start(conversationId: String, listener: CallListener) {
+        if (released) return
+        this.conversationId = conversationId
+        reconnectAttempts = 0
+        everConnected = false
+        callOver = false
+        hungUp = false
+        launchStart(conversationId, listener, reconnecting = false)
+    }
+
+    private fun launchStart(
+        conversationId: String,
+        listener: CallListener,
+        reconnecting: Boolean,
+    ) {
+        val generation = ++this.generation
         scope.launch {
-            listener.onDialing()
+            if (reconnecting) listener.onReconnecting() else listener.onDialing()
             try {
                 val base = serverState.url?.trimEnd('/') ?: error("没有设置服务器地址")
                 val userId = prefs.userId() ?: error("请先登录")
@@ -103,37 +127,56 @@ class CallController(
                 val transport = SmallWebRTCTransport(context, iceConfig)
                 val callbacks = object : PipecatEventCallbacks() {
                     override fun onBotReady(data: BotReadyData) {
+                        if (generation != this@CallController.generation) return
                         ready = true
+                        everConnected = true
                         connectTimeout?.cancel()
                         post { listener.onConnected(setup.maxCallSeconds, setup.callExempt) }
                     }
 
                     override fun onBotStartedSpeaking() {
+                        if (generation != this@CallController.generation) return
                         post { listener.onSpeaking(true) }
                     }
 
                     override fun onBotStoppedSpeaking() {
+                        if (generation != this@CallController.generation) return
                         post { listener.onSpeaking(false) }
                     }
 
                     override fun onUserTranscript(data: Transcript) {
+                        if (generation != this@CallController.generation) return
                         post { listener.onHearing(if (data.final) "" else data.text) }
                     }
 
                     override fun onServerMessage(message: Value) {
+                        if (generation != this@CallController.generation) return
                         val payload = runCatching {
                             EidolonJson.encodeToString(Value.serializer(), message)
                         }.getOrNull() ?: return
                         val event = CallEventParser.parse(payload) ?: return
+                        if (event is CallEvent.Ended || event is CallEvent.Error) callOver = true
                         post { listener.onEvent(event) }
                     }
 
                     override fun onBackendError(message: String) {
+                        if (generation != this@CallController.generation) return
+                        callOver = true
                         post { listener.onError(message.ifBlank { "通话服务出错了" }) }
                     }
 
+                    override fun onBotDisconnected(participant: Participant) {
+                        dropped(listener, generation)
+                    }
+
+                    override fun onTransportStateChanged(state: TransportState) {
+                        if (state == TransportState.Disconnected || state == TransportState.Error) {
+                            dropped(listener, generation)
+                        }
+                    }
+
                     override fun onDisconnected() {
-                        if (!hungUp) post { listener.onEnded(null) }
+                        dropped(listener, generation)
                     }
                 }
                 val client = PipecatClient(
@@ -167,6 +210,7 @@ class CallController(
                 connectTimeout = scope.launch {
                     delay(30_000)
                     if (!ready) {
+                        callOver = true
                         post { listener.onError("接通超时，请检查网络后重试") }
                         disconnectQuietly()
                     }
@@ -175,6 +219,7 @@ class CallController(
                 throw error
             } catch (error: Throwable) {
                 Log.e("EidolonCall", "call start failed", error)
+                callOver = true
                 val raw = when (error) {
                     is RTVIException -> error.error.exception?.message ?: error.message
                     else -> error.message
@@ -224,13 +269,42 @@ class CallController(
     fun release() {
         if (released) return
         released = true
+        callOver = true
         dropAudioFocus()
+        releaseConnection()
+    }
+
+    private fun releaseConnection() {
         connectTimeout?.cancel()
         connectTimeout = null
         runCatching { client?.release() }
         runCatching { transport?.release() }
         client = null
         transport = null
+        ready = false
+    }
+
+    private fun dropped(listener: CallListener, generation: Int) {
+        main.post {
+            if (generation != this.generation) return@post
+            if (hungUp || released || closing || callOver || reconnecting || !everConnected) return@post
+            if (reconnectAttempts >= 1) {
+                listener.onEnded("连接已中断")
+                return@post
+            }
+            reconnectAttempts += 1
+            reconnecting = true
+            everConnected = false
+            releaseConnection()
+            listener.onReconnecting()
+            scope.launch {
+                delay(1_000)
+                if (hungUp || released) return@launch
+                reconnecting = false
+                val id = conversationId ?: return@launch
+                launchStart(id, listener, reconnecting = true)
+            }
+        }
     }
 
     private fun disconnectQuietly() {

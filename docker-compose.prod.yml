@@ -48,7 +48,7 @@ services:
       # 浏览器和后端都用本机的 coturn 做 STUN；浏览器另外拿到 TURN 的临时凭据
       # TURN 必须直连公网 IP，不能走 Cloudflare 代理域名。
       EIDOLON_ICE_SERVERS: ${EIDOLON_ICE_SERVERS:-stun:${EIDOLON_PUBLIC_IP}:3478}
-      EIDOLON_TURN_URLS: ${EIDOLON_TURN_URLS:-turn:${EIDOLON_PUBLIC_IP}:3478?transport=udp,turn:${EIDOLON_PUBLIC_IP}:3478?transport=tcp}
+      EIDOLON_TURN_URLS: ${EIDOLON_TURN_URLS:-turn:${EIDOLON_PUBLIC_IP}:3478?transport=udp,turn:${EIDOLON_PUBLIC_IP}:3478?transport=tcp,turns:${EIDOLON_DOMAIN}:5349?transport=tcp}
       EIDOLON_TURN_SECRET: ${EIDOLON_TURN_SECRET:?请在 .env 里填写 EIDOLON_TURN_SECRET}
     volumes:
       - ./data:/data # 数据库（用户、对话、记忆、剧情库）和同步下载的原始剧本缓存 /data/mirror
@@ -74,6 +74,9 @@ services:
   coturn:
     image: coturn/coturn:4.7
     network_mode: host
+    volumes:
+      # 证书从 Caddy 的卷同步到这里，见 deploy/sync-coturn-certs.sh
+      - ./deploy/coturn-certs:/etc/coturn-certs:ro
     # 直接运行 turnserver：镜像自带的入口脚本会对每个参数做一次 shell 求值
     entrypoint: ["turnserver"]
     command:
@@ -90,10 +93,16 @@ services:
       - --denied-peer-ip=0.0.0.0-255.255.255.255
       - --denied-peer-ip=::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
       - --allowed-peer-ip=${EIDOLON_PRIVATE_IP:-${EIDOLON_PUBLIC_IP}}
+      # 后端在 host 网络里仍会把 docker0 的地址作为 ICE candidate；不允许它，TURN
+      # 中继到这条候选时会被拒绝，通话会在中途断开。
+      - --allowed-peer-ip=172.18.0.1
       # 公网地址不在网卡上（1:1 NAT 的云主机）时，告诉浏览器公网地址，本机用内网地址收发
       - --external-ip=${EIDOLON_PUBLIC_IP:?请在 .env 里填写 EIDOLON_PUBLIC_IP}/${EIDOLON_PRIVATE_IP:-${EIDOLON_PUBLIC_IP}}
+      # TURN over TLS：有些网络只放行 TCP，明文重定向容易被中途重置。
+      - --tls-listening-port=5349
+      - --cert=/etc/coturn-certs/fullchain.pem
+      - --pkey=/etc/coturn-certs/privkey.pem
       - --no-cli
-      - --no-tls
       - --no-dtls
       - --log-file=stdout
       - --simple-log
