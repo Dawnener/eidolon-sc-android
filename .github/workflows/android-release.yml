@@ -3,9 +3,11 @@
 # 不在 CI 里重新构建：正式包用本机 ~/.android/debug.keystore 签名，CI 重新构建会换签名，
 # 已安装的用户无法覆盖升级。这里直接下载线上那份 APK，保证字节和签名一致。
 #
-# 用法：先确认 https://eidolon.shiny-colors-ai.xyz/apk/native/release/native-release.apk
-# 是这次要发布的包，再推送标签 `app-v0.1.2`。Release 的 latest 下载地址固定为：
-# https://github.com/MikiHoshiiP/eidolon-sc-android/releases/latest/download/native-release.apk
+# 用法：先确认
+# https://eidolon.shiny-colors-ai.xyz/apk/native/release/Eidolon-SC-0.1.4-release.apk
+# 是这次要发布的包（版本号换成标签里的），再推送标签 `app-v0.1.4`。
+# 下载地址形如：
+# https://github.com/MikiHoshiiP/eidolon-sc-android/releases/download/app-v0.1.4/Eidolon-SC-0.1.4-release.apk
 name: Android Release
 
 on:
@@ -25,39 +27,42 @@ jobs:
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
-      APK_URL: https://eidolon.shiny-colors-ai.xyz/apk/native/release/native-release.apk
       TAG: ${{ github.ref_name }}
     steps:
       - name: 下载线上 APK
         run: |
-          curl -fL --retry 3 --retry-delay 2 --connect-timeout 15 -o native-release.apk "$APK_URL"
-          size=$(stat -c%s native-release.apk)
+          version=${TAG#app-v}
+          file="Eidolon-SC-${version}-release.apk"
+          url="https://eidolon.shiny-colors-ai.xyz/apk/native/release/${file}"
+          curl -fL --retry 3 --retry-delay 2 --connect-timeout 15 -o "$file" "$url"
+          size=$(stat -c%s "$file")
           if [ "$size" -lt 1000000 ]; then
             echo "::error::下载到的文件只有 $size 字节，不像 APK"
             exit 1
           fi
-          sha256sum native-release.apk | tee SHA256SUMS
+          echo "APK_FILE=$file" >> "$GITHUB_ENV"
+          echo "APK_VERSION=$version" >> "$GITHUB_ENV"
+          sha256sum "$file" | tee SHA256SUMS
 
       - name: 创建 Release 并上传
         run: |
-          version=${TAG#app-}
           notes=$(mktemp)
           cat > "$notes" <<EOF
-          Android 客户端 ${version#v}。
+          Android 客户端 ${APK_VERSION}。
 
-          - 下载 \`native-release.apk\` 覆盖安装；已安装旧版本时不需要卸载。
+          - 下载 \`${APK_FILE}\` 覆盖安装；已安装旧版本时不需要卸载。
           - 校验：\`$(cat SHA256SUMS)\`
 
           如果 GitHub 下载慢，可以用本站直连：
-          https://eidolon.shiny-colors-ai.xyz/apk/native/release/native-release.apk
+          https://eidolon.shiny-colors-ai.xyz/apk/native/release/${APK_FILE}
           EOF
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            if ! output=$(gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "Android ${version#v}" --notes-file "$notes" 2>&1); then
+            if ! output=$(gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "Android ${APK_VERSION}" --notes-file "$notes" 2>&1); then
               echo "::error title=Release create failed::$output"
               exit 1
             fi
           fi
-          if ! output=$(gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" native-release.apk SHA256SUMS --clobber 2>&1); then
+          if ! output=$(gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "$APK_FILE" SHA256SUMS --clobber 2>&1); then
             echo "::error title=Release upload failed::$output"
             exit 1
           fi

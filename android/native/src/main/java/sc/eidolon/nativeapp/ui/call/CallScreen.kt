@@ -85,6 +85,7 @@ import sc.eidolon.nativeapp.data.api.CallEvent
 import sc.eidolon.nativeapp.model.Character
 import sc.eidolon.nativeapp.model.Outfit
 import sc.eidolon.nativeapp.model.OutfitCard
+import sc.eidolon.nativeapp.model.joinedSegments
 import sc.eidolon.nativeapp.ui.components.CharacterAvatar
 import sc.eidolon.nativeapp.ui.theme.herColors
 
@@ -297,10 +298,10 @@ fun CallScreen(
         onEnd()
     }
 
-    val latestJa = jaSegments.keys.maxOrNull()?.let { jaSegments[it] }
-    val latestZh = zhSegments.keys.maxOrNull()?.let { zhSegments[it] }
-    val shownJa = latestJa ?: openerJa
-    val shownZh = if (latestJa != null) latestZh else openerZh
+    val replyJa = joinedSegments(jaSegments)
+    val replyZh = joinedSegments(zhSegments)
+    val shownJa = replyJa.ifBlank { openerJa }
+    val shownZh = if (replyJa.isNotBlank()) replyZh else openerZh
     val statusLabel = when {
         connected -> "通话中"
         callEnded && connectedAt != null -> "通话已结束"

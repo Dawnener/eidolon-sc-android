@@ -160,8 +160,8 @@ start() {
   if [ -n "$PUBLIC_HOST" ]; then
     echo "公网入口：https://$PUBLIC_HOST/（Cloudflare Access）"
   fi
-  if [ -f "$NATIVE_APK_DIR/debug/native-debug.apk" ]; then
-    echo "APK 下载：http://$LAN_IP:8080/apk/（原生 App）"
+  if ls "$NATIVE_APK_DIR"/debug/*.apk >/dev/null 2>&1; then
+    echo "APK 下载：http://$LAN_IP:8080/apk/（Eidolon-SC）"
   else
     echo "还没构建 APK：先 bash scripts/android-toolchain.sh，再 cd android && ./gradlew :native:assembleDebug"
   fi

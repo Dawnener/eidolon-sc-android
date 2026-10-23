@@ -26,7 +26,7 @@ ss -ltnp 'sport = :8000 or sport = :8080'
 source ~/.config/eidolon-android/env.sh
 cd android
 ./gradlew :native:assembleDebug
-adb install -r native/build/outputs/apk/debug/native-debug.apk
+adb install -r native/build/outputs/apk/debug/Eidolon-SC-*-debug.apk
 ```
 
 - 模拟器：`~/.local/opt/eidolon-android/sdk/emulator/emulator -avd eidolon-test &`，等 `adb wait-for-device` 和开机完成再装。

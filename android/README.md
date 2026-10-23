@@ -10,10 +10,10 @@
 source ~/.config/eidolon-android/env.sh
 cd android
 ./gradlew :native:assembleDebug
-# 产物：android/native/build/outputs/apk/debug/native-debug.apk
+# 产物：android/native/build/outputs/apk/debug/Eidolon-SC-0.1.4-debug.apk
 
 ./gradlew :native:assembleRelease
-# 产物：android/native/build/outputs/apk/release/native-release.apk
+# 产物：android/native/build/outputs/apk/release/Eidolon-SC-0.1.4-release.apk
 ```
 
 Release 目前用自动生成的 debug keystore 签名，方便侧载和覆盖安装；它不是正式发布签名。
@@ -138,13 +138,13 @@ EIDOLON_LAN_IP=<你的局域网 IP> bash scripts/dev-local.sh start
 
 1. 手机浏览器打开 `http://<局域网 IP>:8080/`，确认页面能显示。打不开先看下面的防火墙。
 2. 打开 `http://<局域网 IP>:8080/apk/`，选择要装的包：
-   - 原生 App Release：`/apk/native/release/native-release.apk`（推荐）
-   - 原生 App Debug：`/apk/native/debug/native-debug.apk`
+   - 原生 App Release：`/apk/native/release/Eidolon-SC-0.1.4-release.apk`（推荐）
+   - 原生 App Debug：`/apk/native/debug/Eidolon-SC-0.1.4-debug.apk`
 3. 按提示允许浏览器「安装未知应用」。
 
-公网下载也放在 GitHub Releases，固定地址是
-`https://github.com/MikiHoshiiP/eidolon-sc-android/releases/latest/download/native-release.apk`。
-推送 `app-v0.1.2` 这样的标签时，`.github/workflows/android-release.yml` 会把部署站点上同一份已签名 APK 同步到 Release，不重新构建。
+公网下载也放在 GitHub Releases，地址形如
+`https://github.com/MikiHoshiiP/eidolon-sc-android/releases/download/app-v0.1.4/Eidolon-SC-0.1.4-release.apk`。
+推送 `app-v0.1.4` 这样的标签时，`.github/workflows/android-release.yml` 会把部署站点上同一份已签名 APK 同步到 Release，不重新构建。
 
 原生 App 首次启动会连内置的公开部署地址；登录、同意条款后进入对话列表。需要换服务器时在「设置 → 服务器」修改。
 

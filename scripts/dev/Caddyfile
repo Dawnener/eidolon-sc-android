@@ -35,15 +35,15 @@
 <title>Eidolon APK</title>
 <body style="font: 16px system-ui; background:#11151e; color:#f2f4f8; padding:2rem;">
 <h1>Eidolon</h1>
-<p><a style="color:#7fb4ff" href="/apk/native/release/native-release.apk">下载原生 App（Release，推荐）</a></p>
-<p><a style="color:#7fb4ff" href="/apk/native/debug/native-debug.apk">下载原生 App（Debug）</a></p>
+<p><a style="color:#7fb4ff" href="/apk/native/release/Eidolon-SC-0.1.4-release.apk">下载 Eidolon-SC（Release，推荐）</a></p>
+<p><a style="color:#7fb4ff" href="/apk/native/debug/Eidolon-SC-0.1.4-debug.apk">下载 Eidolon-SC（Debug）</a></p>
 </body>
 </html>
 HTML
 	}
 
 	# 只给真正的安装包加下载头；请求不存在的 .apk 时走普通 404，免得浏览器拿到空的附件
-	@apkNative path /apk/native/debug/native-debug.apk /apk/native/release/native-release.apk
+	@apkNative path /apk/native/*/*.apk
 	header @apkNative Content-Type "application/vnd.android.package-archive"
 	header @apkNative Content-Disposition "attachment"
 

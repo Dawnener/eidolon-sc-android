@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import sc.eidolon.nativeapp.AppContainer
+import sc.eidolon.nativeapp.BuildConfig
 import sc.eidolon.nativeapp.model.Account
 
 @Composable
@@ -165,7 +166,7 @@ fun SettingsScreen(
         HorizontalDivider()
         SettingsRow(
             title = "关于",
-            subtitle = "Eidolon 原生 0.1.0 · 非官方粉丝作品，角色由 AI 扮演",
+            subtitle = "Eidolon-SC ${BuildConfig.VERSION_NAME} · 非官方粉丝作品，角色由 AI 扮演",
         )
         HorizontalDivider()
         SettingsRow(
