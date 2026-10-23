@@ -31,7 +31,13 @@ from websockets.frames import Close
 from websockets.protocol import State
 
 from eidolon.assembly import build
-from eidolon.call import FishTTS, SegmentCompleteFrame, SegmentTextFrame, SpeechServices
+from eidolon.call import (
+    SEGMENT_PAUSE_SECONDS,
+    FishTTS,
+    SegmentCompleteFrame,
+    SegmentTextFrame,
+    SpeechServices,
+)
 from eidolon.config import FishAudioModel, Settings
 from eidolon.readings import Reading
 from tests.conftest import CharacterConfig
@@ -213,6 +219,8 @@ class Speaker(FrameProcessor):
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
         if isinstance(frame, TTSAudioRawFrame):
+            if not frame.audio.strip(b"\0"):
+                return  # the silence put between segments
             text = frame.audio.rstrip(b"\0").decode()
             self.fish.note(f"audio {text}")
         elif isinstance(frame, OutputTransportMessageFrame):
@@ -224,12 +232,27 @@ class Speaker(FrameProcessor):
         await self.push_frame(frame, direction)
 
 
+class PauseCounter(FrameProcessor):
+    """Keeps the silent audio put between two segments."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.pauses: list[TTSAudioRawFrame] = []
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        await super().process_frame(frame, direction)
+        if isinstance(frame, TTSAudioRawFrame) and not frame.audio.strip(b"\0"):
+            self.pauses.append(frame)
+        await self.push_frame(frame, direction)
+
+
 async def run(
     *frames: Frame,
     fish: FakeFish | None = None,
     hang_up: bool = False,
     pausing: bool = False,
     tts: FishTTS | None = None,
+    pauses: PauseCounter | None = None,
 ) -> FakeFish:
     """Run the frames through, spaced out, then end the call once Fish Audio has had time
     to voice what it was sent, or, with `hang_up`, cancel it straight away; returns the
@@ -242,7 +265,11 @@ async def run(
     end = [CancelFrame()] if hang_up else [SleepFrame(SYNTHESIS * 3)]
     async with asyncio.timeout(15):
         await run_test(
-            Pipeline([tts or FishUnderTest(fish, pausing), Speaker(fish)]),
+            Pipeline([
+                tts or FishUnderTest(fish, pausing),
+                *([pauses] if pauses is not None else []),
+                Speaker(fish),
+            ]),
             frames_to_send=[*spaced, *end],
             send_end_frame=not hang_up,
         )
@@ -279,6 +306,19 @@ async def test_each_segment_is_voiced_in_a_session_of_its_own_announced_as_it_pl
     ]
     assert fish.log.index("2 connected") < fish.log.index("1 finished")
     assert fish.at["2 text 今日も。"] - fish.at["1 finished"] < CONNECTION / 2
+
+
+async def test_a_short_silence_is_put_between_two_segments():
+    """Each segment is voiced in a session of its own; without this they would run into
+    each other."""
+    pauses = PauseCounter()
+
+    await run(*reply(1, ["ほわっ。"], ["今日も。"]), pauses=pauses)
+
+    assert len(pauses.pauses) == 2  # after each of the two segments
+    expected = int(16000 * SEGMENT_PAUSE_SECONDS) * 2
+    assert all(len(frame.audio) == expected for frame in pauses.pauses)
+    assert all(frame.sample_rate == 16000 and frame.num_channels == 1 for frame in pauses.pauses)
 
 
 async def test_paired_tags_reach_only_a_model_that_reads_them():

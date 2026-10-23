@@ -409,6 +409,11 @@ FINISH_TIMEOUT = 10.0
 Japanese: to send the rest of its audio, some seconds of it at most. A session that takes
 longer is given up, and the rest of the segment with it."""
 
+SEGMENT_PAUSE_SECONDS = 0.4
+"""The silence put between two segments of a reply, in seconds. Each segment is voiced in a
+session of its own and started as soon as the one before ends, which can make her run
+sentences together; this is the breath between them."""
+
 
 class FishTTS(InterruptsFirst, ProxiedWebsocket, FishAudioTTSService):
     """Fish Audio, speaking as the character a segment at a time.
@@ -453,6 +458,8 @@ class FishTTS(InterruptsFirst, ProxiedWebsocket, FishAudioTTSService):
         self._session: ClientConnection | None = None
         self._receiving: asyncio.Task | None = None
         self._finished = asyncio.Event()
+        self._context_id: str | None = None
+        """The audio context the segment being voiced, or just voiced, goes to."""
         # The connection the next segment is to start on, open or opening:
         self._spare: asyncio.Task[ClientConnection | None] | None = None
 
@@ -473,6 +480,7 @@ class FishTTS(InterruptsFirst, ProxiedWebsocket, FishAudioTTSService):
     async def _handle_interruption(self, frame: InterruptionFrame, direction: FrameDirection):
         await super()._handle_interruption(frame, direction)
         self._arriving = self._voiced = None
+        self._context_id = None
 
     def _holds_speech(self) -> bool:
         return super()._holds_speech() or self._session is not None
@@ -524,10 +532,22 @@ class FishTTS(InterruptsFirst, ProxiedWebsocket, FishAudioTTSService):
             except TimeoutError:
                 log.warning("Fish Audio did not finish a segment in time; the rest is dropped")
             if self._finished.is_set():  # what received its audio closes it
+                await self._pause_between_segments()
                 self._session = self._receiving = None
             else:
                 await self._close_session()
         self._voiced = None
+
+    async def _pause_between_segments(self) -> None:
+        """Put a short silence after the segment just voiced, so the next one does not run
+        into it; a call that has already been dropped has no context left to put it in."""
+        if self._context_id is None:
+            return
+        silence = b"\x00\x00" * int(self.sample_rate * SEGMENT_PAUSE_SECONDS)
+        await self.append_to_audio_context(
+            self._context_id,
+            TTSAudioRawFrame(silence, self.sample_rate, 1, context_id=self._context_id),
+        )
 
     async def _start_session(self, context_id: str) -> None:
         """Voice the segment in a new session, on the spare connection, whose audio goes to
@@ -545,6 +565,7 @@ class FishTTS(InterruptsFirst, ProxiedWebsocket, FishAudioTTSService):
         if session is None:
             return
         self._session = session
+        self._context_id = context_id
         self._finished = asyncio.Event()
         self._receiving = self.create_task(self._receive(session, context_id, self._finished))
 
