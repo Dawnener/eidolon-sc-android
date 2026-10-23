@@ -114,6 +114,9 @@ class HttpFactory(
     /** SSE：不设读超时和总超时，由协程取消来结束。 */
     val sse: OkHttpClient = client(readTimeoutSeconds = 0, callTimeoutSeconds = 0)
 
+    /** 推送的 SSE：服务器每 80 秒发一次心跳；超过 110 秒没有任何数据就当作断线重连。 */
+    val push: OkHttpClient = client(readTimeoutSeconds = 110, callTimeoutSeconds = 0)
+
     /** 数据包：上传/下载可能持续几分钟，不能用普通 API 客户端的 45 秒总超时。 */
     val transfer: OkHttpClient = OkHttpClient.Builder()
         .cookieJar(cookieJar)

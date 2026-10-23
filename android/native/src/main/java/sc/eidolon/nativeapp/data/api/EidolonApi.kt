@@ -195,7 +195,7 @@ class EidolonApi(
             .header("Accept", "text/event-stream")
             .get()
             .build()
-        val call = http.sse.newCall(request)
+        val call = http.push.newCall(request)
         currentCoroutineContext().job.invokeOnCompletion { call.cancel() }
         val response = try {
             call.execute()

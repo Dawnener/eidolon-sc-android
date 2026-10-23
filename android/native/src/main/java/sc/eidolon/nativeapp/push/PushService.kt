@@ -31,7 +31,7 @@ import sc.eidolon.nativeapp.session.SessionState
  * 前台服务维持一条到后端的 SSE：系统会给它一条低优先级常驻通知，但不会像普通后台
  * 进程那样很快被回收。只由「推送」开关打开且已登录时运行；关闭开关或退出登录就停。
  *
- * 电池方面：一条 TCP 连接、服务器每 50 秒一次心跳、断线指数退避；不轮询、不持有
+ * 电池方面：一条 TCP 连接、服务器每 80 秒一次心跳、断线指数退避；不轮询、不持有
  * WakeLock，常驻通知是 IMPORTANCE_MIN 的静默通知。
  */
 class PushService : Service() {

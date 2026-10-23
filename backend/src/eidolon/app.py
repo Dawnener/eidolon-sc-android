@@ -85,6 +85,11 @@ HEALTH_TIMEOUT = 5.0
 """How long, in seconds, the health check may take before the backend is taken not to
 serve: its threads may all be taken."""
 
+PUSH_PING_SECONDS = 80.0
+"""How often the push stream sends a comment while nothing happens. Long enough that an
+idle phone is woken less, short enough to stay under the 100-second idle timeout of a
+proxy such as Cloudflare."""
+
 _PICTURE_CACHE = {"Cache-Control": "public, max-age=86400"}
 """Avatars and call backgrounds change only with a deploy (ADR-0003): browsers keep them a
 day, then revalidate by ETag, so lists showing every avatar don't download them each visit."""
@@ -440,16 +445,18 @@ def create_app(backend: Backend) -> FastAPI:
     @app.get("/api/push/stream")
     async def push_stream(user_id: UserId, request: Request) -> StreamingResponse:
         """Her reach-outs just recorded, as server-sent events, while the client keeps the
-        connection open; a comment every 50 seconds keeps proxies from closing it without
-        waking a phone more than it must. Nothing is replayed: what was said while no one
-        listened is in the conversation."""
+        connection open; a comment every `PUSH_PING_SECONDS` keeps proxies from closing it
+        without waking a phone more than it must. Nothing is replayed: what was said while
+        no one listened is in the conversation."""
         async def events() -> AsyncIterator[str]:
             with backend.pushes.subscribe(user_id) as queue:
                 while True:
                     if await request.is_disconnected():
                         return
                     try:
-                        event = await asyncio.wait_for(queue.get(), timeout=50)
+                        event = await asyncio.wait_for(
+                            queue.get(), timeout=PUSH_PING_SECONDS
+                        )
                     except TimeoutError:
                         yield ": ping\n\n"
                         continue
