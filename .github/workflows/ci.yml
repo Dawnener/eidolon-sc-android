@@ -61,9 +61,10 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
-  # 推送到 main 或 v* 标签、上面全部通过时：按 image 的缓存再构建一次（通常层都命中，缓存被清掉时整个重建），推到 GHCR
+  # 推送到 main 或 v* 标签、上面全部通过时：按 image 的缓存再构建一次（通常层都命中，缓存被清掉时整个重建），推到 GHCR。
+  # 只在原仓库发布镜像：fork 的令牌没有原仓库 GHCR 的写权限，跑这一步只会失败。
   publish:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.repository == 'Sallyn0225/eidolon-sc'
     needs: [backend, shellcheck, image]
     runs-on: ubuntu-latest
     permissions:
