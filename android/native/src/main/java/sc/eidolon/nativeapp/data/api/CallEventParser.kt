@@ -61,5 +61,6 @@ object CallEventParser {
         (this[name] as? JsonPrimitive)?.contentOrNull
 
     private fun kotlinx.serialization.json.JsonObject.int(name: String): Int? =
-        this[name]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+        // Pipecat 的 Value.Number 会把整数重新编码成 2.0，不能只按整数解析。
+        this[name]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()?.toInt()
 }

@@ -1,9 +1,12 @@
 package sc.eidolon.nativeapp
 
+import ai.pipecat.client.types.Value
+import kotlinx.serialization.json.decodeFromJsonElement
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import sc.eidolon.nativeapp.core.EidolonJson
 import sc.eidolon.nativeapp.data.api.CallEvent
 import sc.eidolon.nativeapp.data.api.CallEventParser
 
@@ -34,6 +37,18 @@ class CallEventParserTest {
         assertEquals("duration_limit", ended.reason)
         assertEquals("时间到了", ended.message)
         assertEquals("2026-10-22T12:00:00Z", ended.cooldownUntil.toString())
+    }
+
+    @Test
+    fun parsesAServerMessageAsPipecatHandsItOver() {
+        val element = EidolonJson.parseToJsonElement(
+            """{"type":"delta","segment":2,"lang":"zh","text":"你好"}""",
+        )
+        val value = EidolonJson.decodeFromJsonElement<Value>(element)
+
+        val payload = EidolonJson.encodeToString(Value.serializer(), value)
+
+        assertEquals(CallEvent.Delta(2, "zh", "你好"), CallEventParser.parse(payload))
     }
 
     @Test
