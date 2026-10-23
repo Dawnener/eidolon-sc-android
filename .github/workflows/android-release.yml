@@ -51,7 +51,17 @@ jobs:
           如果 GitHub 下载慢，可以用本站直连：
           https://eidolon.shiny-colors-ai.xyz/apk/native/release/native-release.apk
           EOF
-          gh release view "$TAG" >/dev/null 2>&1 || \
-            gh release create "$TAG" --title "Android ${version#v}" --notes-file "$notes"
-          gh release upload "$TAG" native-release.apk SHA256SUMS --clobber
-          gh release edit "$TAG" --notes-file "$notes"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            if ! output=$(gh release create "$TAG" --title "Android ${version#v}" --notes-file "$notes" 2>&1); then
+              echo "::error title=Release create failed::$output"
+              exit 1
+            fi
+          fi
+          if ! output=$(gh release upload "$TAG" native-release.apk SHA256SUMS --clobber 2>&1); then
+            echo "::error title=Release upload failed::$output"
+            exit 1
+          fi
+          if ! output=$(gh release edit "$TAG" --notes-file "$notes" 2>&1); then
+            echo "::error title=Release edit failed::$output"
+            exit 1
+          fi
