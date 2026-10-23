@@ -6,7 +6,7 @@
 - **backend**：只监听 127.0.0.1，不直接暴露在公网上。
 - **coturn**：STUN/TURN 服务。手机在移动网络等 NAT 后面时，常常没法和服务器直接建立 UDP 连接，这时语音经 coturn 中继（UDP 或 TCP 的 3478 端口）。只放行 443 端口的网络（部分公司、学校的网络）目前连不上语音，文字对话不受影响。
 
-三个服务都用 host 网络：后端要把本机的公网地址告诉浏览器，coturn 要直接收发 UDP，用 Docker 的端口映射做不到。所以这份配置只适用于 Linux。
+三个服务都用 host 网络：后端要把本机的公网地址告诉客户端，coturn 要直接收发 UDP，用 Docker 的端口映射做不到。所以这份配置只适用于 Linux。
 
 ## 准备
 
@@ -40,9 +40,9 @@ cp .env.example .env
 - `EIDOLON_DOMAIN`：网站的域名，例如 `eidolon.example.com`。
 - `EIDOLON_PUBLIC_IP`：这台服务器的公网 IPv4 地址。coturn 只允许把语音中继到这台服务器（也就是后端），别人拿不到它当开放的中继用。
 - `EIDOLON_PRIVATE_IP`：只有公网地址不在网卡上时才填，填网卡上的内网地址。在服务器上执行 `ip -4 addr`：能看到公网地址就不用填（Vultr、DigitalOcean、搬瓦工等大多如此）；只能看到 `10.`、`172.`、`192.168.` 开头的内网地址时（AWS、阿里云、腾讯云等 1:1 NAT 的云主机），填这个内网地址。这种环境还没有实际验证过，语音连不上时请看「排障」。
-- `EIDOLON_TURN_SECRET`：coturn 和后端共用的密钥，用 `openssl rand -hex 32` 生成。后端给每位用户签发 24 小时后过期的 TURN 凭据，这个密钥本身不会发给浏览器。
+- `EIDOLON_TURN_SECRET`：coturn 和后端共用的密钥，用 `openssl rand -hex 32` 生成。后端给每位用户签发 24 小时后过期的 TURN 凭据，这个密钥本身不会发给客户端。
 - `GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`，`GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`：用户登录用的 OAuth 应用，至少配一家，见下文「配置 OAuth 应用」。只配了一家时，登录页只显示那一种。
-- `EIDOLON_SECRET_KEY`：加密后台里保存的 key、给封禁名单做哈希用的密钥，用 `openssl rand -hex 32` 生成。不填时后台里的 key 只能看不能改。用户的自带密钥只存在他们自己的浏览器里，服务器不保存，跟这个变量无关，不填也能用（ADR-0017）。填了之后**不要更换**：换了以后后台里保存的 key 解不开，那几项回退到 `.env` 的值（见下文「后台」）；封禁名单是用它派生的密钥做的哈希，也对不上了，被删除的封禁用户能重新注册。
+- `EIDOLON_SECRET_KEY`：加密后台里保存的 key、给封禁名单做哈希用的密钥，用 `openssl rand -hex 32` 生成。不填时后台里的 key 只能看不能改。用户的自带密钥只存在他们自己的设备上（App 本地），服务器不保存，跟这个变量无关，不填也能用（ADR-0017）。填了之后**不要更换**：换了以后后台里保存的 key 解不开，那几项回退到 `.env` 的值（见下文「后台」）；封禁名单是用它派生的密钥做的哈希，也对不上了，被删除的封禁用户能重新注册。
 - `EIDOLON_ADMINS`、`EIDOLON_CONTACT`（可选）：管理者名单和给被封禁的用户看的联系方式，见下文「后台」。不填管理者名单时没有后台，一切照旧用 `.env` 和命令行。
 - **不要**填 `EIDOLON_DEV_LOGIN`：它让任何人不经登录就能冒充任何用户，只能在本地开发时打开。配置了 `EIDOLON_DOMAIN` 时后端检测到它会拒绝启动。
 
@@ -67,7 +67,7 @@ docker compose -f docker-compose.prod.yml up -d
 
 后端用 CI 发布到 GHCR 的镜像（`ghcr.io/sallyn0225/eidolon-sc-backend`），服务器上不用构建。镜像只有 linux/amd64 一种。arm64 的服务器，或者想用自己改过的代码时，改用 `up -d --build` 在服务器上构建后端。
 
-第一次启动时 Caddy 会申请证书，稍等片刻后用浏览器打开 `https://你的域名`。后端启动失败时（缺少人设文件、对话模型检查不通过、`CHAT_LLM_*` 只填了一部分等），用 `docker compose -f docker-compose.prod.yml logs backend` 查看原因。
+第一次启动时 Caddy 会申请证书，稍等片刻后用手机浏览器打开 `https://你的域名`（下载页）。后端启动失败时（缺少人设文件、对话模型检查不通过、`CHAT_LLM_*` 只填了一部分等），用 `docker compose -f docker-compose.prod.yml logs backend` 查看原因。
 
 - **日志**：每个容器的日志最多留 5 个 10 MB 的文件，旧的自动删掉。后端每行都带时间和来源；访问日志不记查询字符串。事件循环比预期晚醒 200 ms 以上时，后端会记一条 `the event loop ran … ms late, … calls in progress`，可以用来判断机器是否忙不过来。
 - **健康检查**：后端的 `/api/health` 读不了数据库时返回 503，`docker compose ps` 里显示为 unhealthy，但不会自动重启。
@@ -204,7 +204,7 @@ docker compose -f docker-compose.prod.yml exec backend eidolon eval memory --jso
 
 ## 立绘素材
 
-通话层上可以叠一层原作的 Spine 立绘（GLOSSARY.md「立绘」）。素材不进仓库（ADR-0003 的 2026-09-30 修订），放在你选的 S3 兼容对象存储里，浏览器直接从存储桶下载。三项都配好了，这位角色的通话层才显示立绘；少一项就和原来一样，只显示背景图：
+通话层上可以叠一层原作的 Spine 立绘（GLOSSARY.md「立绘」）。素材不进仓库（ADR-0003 的 2026-09-30 修订），放在你选的 S3 兼容对象存储里，App 在通话页直接从存储桶下载。三项都配好了，这位角色的通话层才显示立绘；少一项就和原来一样，只显示背景图：
 
 - `characters/characters.toml` 里这位角色的 `idol_id`：原作的偶像编号，即 ShinyColorsDB 的 `idolId`（同步后整理目录 `source/spine_manifest.json` 里也有）（真乃是 1，灯织是 2，めぐる是 3，恋钟是 4）。
 - 同一段里的 `default_outfit`：用户没选过衣装时她穿的那一套，写成 `stand/<enzaId>`（这张卡的私服）或 `stand_costume/<enzaId>`（演出服），`enzaId` 是卡的十位编号（`source/spine_manifest.json` 里的 `enzaId`），例如 `stand/1030010010`。
@@ -216,15 +216,15 @@ docker compose -f docker-compose.prod.yml exec backend eidolon eval memory --jso
 
 ### 选择对象存储
 
-任何 S3 兼容的对象存储都行：Cloudflare R2（不收流量费）、腾讯云 COS、阿里云 OSS、AWS S3，或者自己搭的 MinIO、SeaweedFS。同步脚本只用 S3 接口，不依赖哪一家。每位角色约 120MB（真乃 84 套、恋钟 80 套衣装，加上缩略图），浏览器打电话时下载一套，平均约 1.3MB（之后走缓存）。服务器在国内时，选国内的存储、配上已备案的域名，手机上的加载会快很多。
+任何 S3 兼容的对象存储都行：Cloudflare R2（不收流量费）、腾讯云 COS、阿里云 OSS、AWS S3，或者自己搭的 MinIO、SeaweedFS。同步脚本只用 S3 接口，不依赖哪一家。每位角色约 120MB（真乃 84 套、恋钟 80 套衣装，加上缩略图），App 打电话时下载一套，平均约 1.3MB（之后走缓存）。服务器在国内时，选国内的存储、配上已备案的域名，手机上的加载会快很多。
 
 建一个存储桶，再建一对只能写这个存储桶的访问密钥（R2 叫「API 令牌」，选 Object Read & Write），然后配置：
 
 - **公开可读**：不签名、不要求登录（R2 在存储桶设置里连接自定义域名或打开 `r2.dev` 地址；COS、OSS 把存储桶设成「公有读私有写」）。这个公开地址就是 `EIDOLON_STAND_ASSETS_URL`。
-- **CORS**：允许网站的域名（`https://你的域名`）用 `GET` 访问。立绘用 WebGL 绘制，贴图跨域时没有 CORS 就加载不了，通话层会退回背景图。本地开发时再加上 `http://localhost:3000`。
+- **CORS**：允许 App 里播放立绘的 WebView 页面 `https://appassets.androidplatform.net` 用 `GET` 访问；最简单的做法是 `Access-Control-Allow-Origin: *`。立绘用 WebGL 绘制，贴图跨域时没有 CORS 就加载不了，通话层会退回背景图。
 - **缓存**：同步脚本上传时给每个文件设好了 `Cache-Control`，存储桶这边不用另外设置，只要别用规则覆盖掉：衣装的文件内容不会变，是 `public, max-age=31536000, immutable`；缩略图可能重画，是一天；衣装清单随新卡变化，是 `no-cache`（每次都向存储桶确认）。前面有 CDN 时，让它沿用源站的 `Cache-Control`。
 
-**前面有 CDN 时**（推荐，尤其是国内）：存储桶可以保持私有，只让 CDN 回源。以腾讯云为例：CDN 添加加速域名（例如 `stand.你的域名`），源站类型选 COS 源、选中这个存储桶，打开「私有存储桶访问」并按提示给 CDN 授权；缓存配置里节点缓存和浏览器缓存都选「遵循源站」（不然衣装清单会被缓存几十天，新卡迟迟不出现）；「高级配置 → HTTP 响应头」加一条 `Access-Control-Allow-Origin: *`（存储桶私有时 CORS 由 CDN 统一加）；申请证书、开启 HTTPS 服务（网站是 HTTPS，浏览器不许加载 HTTP 的立绘）；建议再设一条用量封顶，防止被刷流量。`EIDOLON_STAND_ASSETS_URL` 填 CDN 的地址，例如 `https://stand.你的域名`。这样直接访问存储桶会被拒绝，公开的只有 CDN。
+**前面有 CDN 时**（推荐，尤其是国内）：存储桶可以保持私有，只让 CDN 回源。以腾讯云为例：CDN 添加加速域名（例如 `stand.你的域名`），源站类型选 COS 源、选中这个存储桶，打开「私有存储桶访问」并按提示给 CDN 授权；缓存配置里节点缓存和浏览器缓存都选「遵循源站」（不然衣装清单会被缓存几十天，新卡迟迟不出现）；「高级配置 → HTTP 响应头」加一条 `Access-Control-Allow-Origin: *`（存储桶私有时 CORS 由 CDN 统一加）；申请证书、开启 HTTPS 服务（App 的立绘页也是 HTTPS，WebView 不许加载 HTTP 的立绘）；建议再设一条用量封顶，防止被刷流量。`EIDOLON_STAND_ASSETS_URL` 填 CDN 的地址，例如 `https://stand.你的域名`。这样直接访问存储桶会被拒绝，公开的只有 CDN。
 
 **存储桶里的结构**：
 
@@ -233,13 +233,10 @@ docker compose -f docker-compose.prod.yml exec backend eidolon eval memory --jso
 | `spine/idols/<stand 或 stand_costume>/<enzaId>/` | 一套衣装的 `data.json`、`data.atlas`、`data.png`，和 ShinyColorsDB 的 CDN 上一样。贴图原样上传：约一半其实是 WebP，只是叫 `.png`，上传时按文件内容标成 `image/webp` |
 | `thumbnails/<stand 或 stand_costume>/<enzaId>.png` | 这套衣装的缩略图：电脑「半身 ADV」的取景，400×500，透明背景 |
 | `outfits/<idol_id>.json` | 这位角色的衣装清单，换衣装面板按它列出衣装 |
-| `greetings/<角色标识>-<哈希>.mp3` | 落地页上她的招呼，由 `eidolon greeting upload` 合成上传，见下面的「招呼」 |
-| `call-openers/<角色标识>-<哈希>.mp3` | 落地页演示来电里她的开场白，同样由 `eidolon greeting upload` 合成上传，见下面「招呼」里的「开场白」 |
-| `call-posters/<角色标识>.webp` | 落地页演示来电里她的卡图（联系人海报），手动上传，见下面「招呼」里的「来电卡图」 |
-| `landing-voxels/<角色标识>.json` | 落地页第 5 幕里她的体素小人，手动上传，见下面「招呼」里的「体素小人」 |
-| `landing-memory/still.webp` | 落地页第 5 幕事先渲染好的终局全景图，给不播放动画的访客，手动上传，见下面「招呼」里的「第 5 幕的静止图」 |
+| `greetings/<角色标识>-<哈希>.mp3` | 她招呼的音频。App 只显示 `greeting` 的原文和中文字幕，不播放这个文件；`eidolon greeting upload` 仍会把它合成上传，留给以后的入口 |
+| `call-openers/<角色标识>-<哈希>.mp3` | 她开场白的音频，规则同 `greetings/`。App 显示 `call_opener` 的文字和字幕，不播放这个文件 |
 
-后端通过 `/api/characters` 把默认衣装的地址和衣装清单的地址（`stand.outfits_url`）告诉浏览器。
+后端通过 `/api/characters` 把默认衣装的地址和衣装清单的地址（`stand.outfits_url`）告诉 App。
 
 **衣装清单**的格式：
 
@@ -261,7 +258,7 @@ docker compose -f docker-compose.prod.yml exec backend eidolon eval memory --jso
 - 每张卡一项，按 `id`（enzaId）排序，也就是原作的发布顺序。只收 stand 和 stand_costume，不收 Q 版小人（cb）。
 - `name` 是卡名，原文去掉【】和角色名（`【ナチュラルモード】櫻木真乃` 是 `ナチュラルモード`）；原作里没有卡名的（`【】櫻木真乃`）用角色名。`type` 是 `spine_manifest.json` 的 `dressType`：P_SR、P_SSR、Special、Mizugi 等。
 - `everyday` 是这张卡的私服（`stand`），`stage` 是演出服（`stand_costume`），没有的为 `null`。两套贴图逐字节相同时（多数 Special 卡）只算一套，记在 `everyday`。`default_outfit` 要写清单里有的那套：写成被去重的演出服时它不会上传，同步时会提示。
-- `url` 和 `thumbnail` 是相对于衣装清单本身的地址（浏览器里用 `new URL(url, outfits_url)` 解析）。
+- `url` 和 `thumbnail` 是相对于衣装清单本身的地址（App 按 URL 规则解析）。
 
 ### 同步素材
 
@@ -319,7 +316,7 @@ tail -f logs/stand-sync.log   # 另开一个终端看进度
 
 **新增角色**：在 `characters.toml` 里给她配上 `idol_id` 和 `default_outfit`，重新运行 `deploy/stand-sync.sh`（已上传的衣装不会重复上传），再重启后端。
 
-**下架**：收到权利方的要求时，清空存储桶即可，落地页的招呼也在这个存储桶里，会一起下线（见「招呼」的「下线」）。客户端加载不到素材时，通话层自动退回背景图，不需要改代码或重新部署。之后别再运行同步脚本，也可以把 `EIDOLON_STAND_ASSETS_URL` 清空、重启后端，连换衣装的入口一起去掉。
+**下架**：收到权利方的要求时，清空存储桶即可，招呼和开场白也在这个存储桶里，会一起下线（见「招呼」的「下线」）。客户端加载不到素材时，通话层自动退回背景图，不需要改代码或重新部署。之后别再运行同步脚本，也可以把 `EIDOLON_STAND_ASSETS_URL` 清空、重启后端，连换衣装的入口一起去掉。
 
 ### 本地开发时怎么看效果
 
@@ -338,102 +335,38 @@ EIDOLON_STAND_ASSETS_URL=http://localhost:8765
 
 ## 招呼
 
-落地页上每位偶像有一句招呼（GLOSSARY.md「招呼」）：访客点她，就听到她用自己的音色说一句日语，同时看到原文和中文字幕。台词写在 `characters/characters.toml` 里她那一段的两项，随仓库提交：
+每位偶像可以写一句招呼（GLOSSARY.md「招呼」）。App 在通话开始、角色没有配 `call_opener` 时，用它的日文原文和中文字幕作开场白。台词写在 `characters/characters.toml` 里她那一段的两项，随仓库提交：
 
 ```toml
 greeting = "[softly] ほわっ……はじめまして"   # 日语原文，可以带语气提示，写法和回复里的一样
 greeting_subtitle = "……初次见面"              # 中文字幕
 ```
 
-两项要一起配，都写成双引号的单行字符串；只配一项、或原文去掉语气提示后什么都不剩时，后端拒绝启动并说明是哪位角色。语气提示只给语音合成听，页面上不显示。
+两项要一起配，都写成双引号的单行字符串；只配一项、或原文去掉语气提示后什么都不剩时，后端拒绝启动并说明是哪位角色。语气提示只给语音合成听，App 里不显示。
 
-音频不进仓库（ADR-0003 的 2026-10-10 修订），由下面的命令事先用她的音色合成好，放进立绘的同一个存储桶。访客播放时只是从存储桶下载这个文件，不会实时调用语音合成；合成招呼也不经过回合，不写运行记录，不计入任何人的限额。
-
-后端在 `/api/characters` 里给出每句招呼的原文（去掉了语气提示）、字幕和音频地址 `<EIDOLON_STAND_ASSETS_URL>/greetings/<角色标识>-<哈希>.mp3`。哈希由带语气提示的日语原文、`voice_id` 和这句用到的读音条目（见下面的「读音」）算出，所以后端不用查存储桶就知道地址，台词、音色或它用到的读音一变地址就变，浏览器不会播到缓存里的旧版本。没配 `EIDOLON_STAND_ASSETS_URL` 时不给音频地址，落地页只显示字幕；地址上还没有音频（改了台词还没跑命令）时，落地页也只显示字幕。
+后端在 `/api/characters` 里给出每句招呼的原文（去掉了语气提示）和中文字幕，没配 `EIDOLON_STAND_ASSETS_URL` 也不影响文字显示。招呼的音频不是 App 运行所需的：当前客户端只读文字，不播放提前合成的 mp3；要生成音频见下面的「音频（可选）」。
 
 ### 开场白
 
-落地页第 4 幕的演示来电里，访客接听后打来电话的那位说一句开场白（GLOSSARY.md「开场白」）。它和招呼一样写在 `characters.toml` 她那一段，规则也一样（两项一起配、双引号单行、语气提示只给语音合成听），只有打来电话的那一位需要配，没配的话接通后只有立绘和计时：
+App 的通话页接通后、她说第一句话之前，显示一句开场白（GLOSSARY.md「开场白」）。它和招呼一样写在 `characters.toml` 她那一段，规则也一样（两项一起配、双引号单行、语气提示只给语音合成听），只有需要开场白的角色才配；没配时 App 退回用 `greeting`，两者都没有就只显示立绘和计时：
 
 ```toml
 call_opener = "[shyly] あっ、もしもし……真乃です。えっと、今、お電話だいじょうぶですか？"
 call_opener_subtitle = "啊，喂……我是真乃。那个，现在方便接电话吗？"
 ```
 
-下面说的招呼的合成上传、地址、退出码和下线，开场白都一样，只是放在存储桶的 `call-openers/` 下（`/api/characters` 里是 `call_opener`），和招呼互不覆盖、互不删除。
+开场白的音频同样由 `eidolon greeting upload` 放进存储桶的 `call-openers/`，当前客户端不播放。
 
-### 来电卡图
+### 音频（可选）
 
-演示来电的锁屏上，打来电话的那位的一张卡图作联系人海报占满手机屏幕。它不进仓库（ADR-0003 的 2026-10-12 修订），由部署者手动放进存储桶的 `call-posters/<角色标识>.webp`：竖图，约 9:19.5（和手机屏幕一样），宽 300 px 左右就够。后端不查存储桶，配了 `EIDOLON_STAND_ASSETS_URL` 就在 `/api/characters` 里给出这个地址（`call_poster_url`）；那里没有图、加载不出来时，落地页显示她的印象色渐变加名字。地址固定，换图后浏览器和 CDN 可能缓存旧图一阵子，上传时缓存头设成 `public, max-age=86400`（一天）。
-
-现在用的是真乃的「【しじまに華ひととき】櫻木真乃」，出处和裁法记在 `frontend/src/app/(landing)/CREDITS.md`；换图时一起改。
-
-### 体素小人
-
-落地页第 5 幕「记忆」里，四位偶像（真乃、果穗、冬优子、雾子）是站在浮岛上的方块（体素）小人。它们不进仓库（ADR-0003 的 2026-10-16 修订），由部署者手动放进存储桶的 `landing-voxels/<角色标识>.json`。后端不查存储桶，配了 `EIDOLON_STAND_ASSETS_URL` 就在 `/api/characters` 里给出每位角色的这个地址（`voxels_url`），落地页只用这四位的；那里没有文件、加载不出来时，她站的地方是一块她印象色的小方块加名字。
-
-从官方立绘做到存储桶：
-
-1. **画 Q 版三视图**：用生图模型，参照她的官方半身立绘和 Q 版图画一张三视图：白底、平光、约三头身、站直、双臂略离开身体、不带文字。提示词要点是「Character turnaround / model sheet … clean anime chibi, about 3 heads tall … FRONT, LEFT SIDE PROFILE, BACK … plain white background … arms hanging slightly away from the body … flat even lighting, flat cel colors, no text」，再逐条写清她的发型、服装、鞋袜、配饰，尤其是认得出她的东西（真乃头上的鸽子、果穗的呆毛和腰上的外套、冬优子的丸子头、雾子的双马尾和创可贴）。
-2. **取正面**：从三视图里切出正面，放到 1024×1024 的白底上居中。侧面、背面不用：三张图对不齐，用多视图生成反而更糟。
-3. **生成网格**：在混元 3D 网页版用「单图生成」，带纹理，导出 GLB（每个 30–50 MB）。第一次用之前看一眼它的用户条款，确认生成结果可以公开展示、改成体素。
-4. **转成体素**：在 `frontend/` 下跑
-
-   ```sh
-   node scripts/glb-voxelize.mts --out <输出目录> --preview <预览图目录> mano.glb kaho.glb fuyuko.glb kiriko.glb
-   ```
-
-   GLB 的文件名就是角色标识，输出 `<输出目录>/<角色标识>.json`。默认 96 格高，每个 200–550 KB；手机上吃力时加 `--height 64` 出小一号的，每个 90–210 KB。`--preview` 给每位写一张正面、背面并排的平面图，看一眼：脸上要有眼睛，后脑勺的头发不能有黑点。文件格式见脚本里的 `Voxels` 类型。
-5. **上传**到存储桶的 `landing-voxels/`，Content-Type 设成 `application/json`，缓存头 `public, max-age=86400`（一天；地址固定，换文件后浏览器和 CDN 可能缓存旧的一阵子）。
-
-三视图和 GLB 留在自己电脑上，不进仓库也不进存储桶。出处和做法记在 `frontend/src/app/(landing)/CREDITS.md`；换角色、重做模型时一起改。
-
-### 第 5 幕的静止图
-
-不播放动画的访客（定格档、静态档），和 3D 画布丢了上下文、建不起来的时候，落地页第 5 幕是一张事先渲染好的终局全景图：四位偶像站在各自的岛上，四根记忆柱顶上都是真乃颜色的方块，几根光线连着。图上有体素小人，所以它同样不进仓库，放在存储桶的 `landing-memory/still.webp`。后端不查存储桶，配了 `EIDOLON_STAND_ASSETS_URL` 就在 `/api/landing` 里给出这个地址（`memory_still_url`）；那里没有图、加载不出来时，静止版式里这一幕只有文字。
-
-图由页面上同一套场景代码在无头浏览器里画出来。改了第 5 幕的场景、换了体素文件以后重新出一张：
-
-1. 起后端（要配好 `EIDOLON_STAND_ASSETS_URL`，四位的体素文件已经在存储桶里），在 `frontend/` 下跑
-
-   ```sh
-   node scripts/landing-memory-still.mjs --out <文件> [--backend http://localhost:8000]
-   ```
-
-   输出 1920×1200 的 WebP，几十 KB。有哪位的体素文件加载不到就不出图。
-2. **上传**到存储桶的 `landing-memory/still.webp`，Content-Type 设成 `image/webp`，缓存头 `public, max-age=86400`。
-
-### 合成上传
-
-**什么时候跑**：新增或改了招呼、开场白的原文（`greeting`、`call_opener`）、换了她的 `voice_id`，或者改了读音文件之后，重启后端之前或之后都行。只改字幕不用跑，重启后端即可。改了原文或字幕，还要重新生成落地页的字体子集（`frontend/AGENTS.md`「落地页的字体子集」）。
-
-在服务器或自己的电脑上，不经过 docker，和立绘同步一样用 uv 运行：
+当前客户端不播放招呼和开场白的音频，这一段可以跳过。要让存储桶的 `greetings/` 和 `call-openers/` 里有 mp3，在服务器或自己的电脑上，不经过 docker，和立绘同步一样用 uv 运行：
 
 ```sh
 cd backend
 uv run --env-file=../.env eidolon greeting upload
 ```
 
-用到的设置（没有 `.env` 时去掉 `--env-file`，把变量放进环境里）：
-
-- 存储桶：和立绘同一个，`EIDOLON_STAND_S3_*`（见「同步素材」）。密钥除了上传还要能删除对象：命令要删掉旧版本，下线时也要清空存储桶。只能上传的密钥（例如腾讯云 COS 的预设策略 QcloudCOSDataWriteOnly 不含删除）会让命令在删旧版本时失败、以退出码 3 结束；腾讯云 COS 给密钥所属的子用户加一条只允许 `name/cos:DeleteObject`、资源是这个存储桶的自定义策略即可。
-- 语音合成：`.env` 的 `FISH_AUDIO_API_KEY` 和 `FISH_AUDIO_MODEL`，也就是部署者的 key。命令只读 `.env`，后台里改过的语音合成设置对它不起作用。默认模型 `s2.1-pro-free` 不消耗 API 额度。只换模型不会重新合成：地址只跟台词、音色和读音有关，已经上传过的招呼原样留着；想用新模型重念，先删掉存储桶里那几个 mp3 再运行。
-- 角色配置：默认是 `../characters/characters.toml`（相对于 `backend/`），可以用 `--characters` 或 `EIDOLON_CHARACTERS_PATH` 指定。读音文件取它旁边的 `readings.toml`。
-
-它做的事：
-
-- 列一遍存储桶的 `greetings/` 和 `call-openers/`，只合成还没有的。开场白和招呼各按各的目录处理，下面以招呼为例。没有改动时再跑一次只是列一遍，不花钱。
-- 用她的 `voice_id`，带着语气提示和整份读音表合成 mp3，上传到 `greetings/<角色标识>-<哈希>.mp3`，带 `Cache-Control: public, max-age=31536000, immutable`。
-- 新的那句在存储桶里之后，删掉她在 `greetings/` 下的旧版本。
-- 配置里已经没有招呼的角色（删掉了招呼，或者整个删掉了这位角色），她在 `greetings/` 下的招呼也删掉：存储桶是公开的，没有什么再指向它。所以 `--characters` 要指向完整的角色配置，指向只有几位角色的配置会删掉其他人的招呼。
-- 某位角色没有音色（`voice_id` 是空的）、合成失败（key 不对、余额不足等）或上传失败时，报告是谁、为什么，接着处理其他人。
-
-| 退出码 | 含义 | 要做什么 |
-|---|---|---|
-| 0 | 完全成功（或者角色配置里没有招呼） | 不用管 |
-| 1 | 配置出错：缺存储桶的设置、缺 `FISH_AUDIO_API_KEY`、角色配置或读音文件有误，什么都没做 | 看输出里的错误 |
-| 2 | 列不出存储桶里已有的招呼（连不上、密钥不对），什么都没合成 | 和立绘同步的退出码 2 一样排查 |
-| 3 | 有角色的招呼没有上传完，其余的已照常上传 | 看输出里是哪几位、什么原因；改好后重新运行，已上传的不会重复合成 |
+它读取 `.env` 的 `FISH_AUDIO_API_KEY`、`FISH_AUDIO_MODEL` 和存储桶的 `EIDOLON_STAND_S3_*`（密钥除了上传还要能删除对象）。命令只合成存储桶里还没有的音频；配置里已经没有的招呼或开场白，会从存储桶删掉。
 
 ### 读音
 
@@ -446,7 +379,7 @@ kana = "もりの りんぜ"
 phonemes = "mo0ri1no0ri1N0ze0"
 ```
 
-招呼和通话每次请求 Fish Audio，都把音素不为空的全部条目放进请求的 `pronunciation_dictionary`，部署者的 key 和用户自带的 key 都一样。Fish Audio 按字面子串、区分大小写找原文写法，所以别收会和普通词撞上的写法：单独的「透」（透明、透き通る）和单独的「天井」（天花板）都没收，收的是「浅倉透」「天井努」「天井社長」「天井さん」。交给它的日语本身不变，字幕、文字记录和日语原文里还是原来的写法。Fish Audio 用不了这些条目时不报错、照常合成，所以念得对不对只能靠听。
+通话每次请求 Fish Audio 时，把音素不为空的全部条目放进请求的 `pronunciation_dictionary`，部署者的 key 和用户自带的 key 都一样。Fish Audio 按字面子串、区分大小写找原文写法，所以别收会和普通词撞上的写法：单独的「透」（透明、透き通る）和单独的「天井」（天花板）都没收，收的是「浅倉透」「天井努」「天井社長」「天井さん」。交给它的日语本身不变，字幕、文字记录和日语原文里还是原来的写法。Fish Audio 用不了这些条目时不报错、照常合成，所以念得对不对只能靠听。
 
 **改读音**：改那一条的 `kana`，把 `phonemes` 清空成 `""`，在自己的电脑上运行：
 
@@ -460,22 +393,22 @@ uv run eidolon reading draft
 改完提交、部署，然后：
 
 1. 重启后端，读音文件只在启动时读，后台不能改它。
-2. 重跑 `eidolon greeting upload`（见上面的「合成上传」）：用到改动条目的招呼换了地址，会重新合成并删掉旧版本；没用到的不动。
+2. 已经合成的招呼音频不会自动更新；需要更新时再跑一次 `eidolon greeting upload`（见「音频（可选）」）。
 
 ### 下线
 
-收到权利方的要求时，清空存储桶：立绘、招呼、开场白、来电卡图、体素小人和第 5 幕的静止图一起下线，通话层退回背景图，落地页退回只有字幕、光、后备海报和印象色方块（静止版式的第 5 幕只有文字），不需要改代码或发版。之后别再运行立绘同步脚本和这条命令。只想下线招呼时，删掉存储桶里 `greetings/` 下的文件即可（落地页同样只显示字幕），开场白是 `call-openers/`；要连字幕一起去掉，删掉 `characters.toml` 里的招呼或开场白再重启后端。
+收到权利方的要求时，清空存储桶：立绘、招呼和开场白一起下线，通话层退回背景图，App 的开场白只剩文字，不需要改代码或发版。之后别再运行立绘同步脚本。要连招呼或开场白的文字一起去掉，删掉 `characters.toml` 里的那一项再重启后端。
 
 ## 配置 OAuth 应用
 
-任何人都能用 Google 或 GitHub 登录（ADR-0006），登录由后端完成：浏览器跳到 Google 或 GitHub 登录，再回到网站的回调地址。回调地址是：
+任何人都能用 Google 或 GitHub 登录（ADR-0006），登录由后端完成：App 打开浏览器跳到 Google 或 GitHub，授权后回到后端的回调地址，再把一次性登录码交回 App。回调地址是：
 
 | 提供方 | 回调地址 |
 |---|---|
 | GitHub | `https://你的域名/api/auth/github/callback` |
 | Google | `https://你的域名/api/auth/google/callback` |
 
-本地开发时把 `https://你的域名` 换成 `http://localhost:3000`，并且另建一套开发用的应用（名字带上 `(dev)`）：线上应用只登记线上的回调地址，线上的密钥也不会出现在开发机的 `.env` 里。
+本地开发用 `.env` 里的 `EIDOLON_DEV_LOGIN=1` 和登录页的「开发登录」，不需要另建 OAuth 应用，线上的密钥也不会出现在开发机的 `.env` 里。
 
 用户在 Google、GitHub 的授权页上看到的是应用的名称、图标和描述，所以名称要填用户认得的（和网站标题一样，例如 `Eidolon-SC`），不要用原作的名字或商标。图标在 `docs/brand/`：`oauth-logo-512.png` 给 GitHub，`oauth-logo-120.png` 给 Google。
 
@@ -492,7 +425,7 @@ uv run eidolon reading draft
 4. 在「受众群体」里点「发布应用」。只用这三个作用域不需要 Google 审核，发布后任何 Google 账号都能登录。
 5. **品牌验证**：没验证时，同意页上只显示域名，不显示应用名称和图标。先在 [Google Search Console](https://search.google.com/search-console) 用同一个 Google 账号添加「网域」资源（顶级域名），按提示在 DNS 里加一条 TXT 记录完成所有权验证（这条记录以后不要删）。然后**网站上线、首页和隐私政策能公开打开时**，在「品牌」或「验证中心」里点「验证品牌」：自动检查几分钟，转人工复核一般要 2–3 个工作日，期间网站要一直能打开。结果是「可以发布」后，7 天内点「发布品牌」才会生效。以后改名称、图标或链接要重新验证。
 
-改完 `.env` 后 `docker compose -f docker-compose.prod.yml up -d` 让后端生效。打开网址是落地页，从右上角的「登录」登录：第一次登录的用户要同意隐私政策和使用条款、声明年满 13 岁。登录方式、限额、自带密钥等见[配置指南](configuration.md)的「登录、用户与限额」和「自带密钥」；封禁、查看用量等管理命令也在那里，同样的事也可以在后台里做（见下一节）。
+改完 `.env` 后 `docker compose -f docker-compose.prod.yml up -d` 让后端生效。用浏览器打开 `https://你的域名` 可以下载 App；在 App 里登录：第一次登录的用户要同意隐私政策和使用条款、声明年满 13 岁。登录方式、限额、自带密钥等见[配置指南](configuration.md)的「登录、用户与限额」和「自带密钥」；封禁、查看用量等管理命令也在那里，同样的事也可以在后台里做（见下一节）。
 
 > [!NOTE]
 > 对公众开放意味着陌生人的对话和记忆会存在这台服务器上，并交给你配置的第三方服务处理（见网站的隐私政策页）。几点注意：
@@ -752,13 +685,13 @@ EIDOLON_BACKUP_WARN_GB=3      # 存储桶里备份的总量超过它就提醒，
 
 用户删除自己的数据时，线上数据库里立刻彻底删除；已经做好的备份里的副本，要等这些备份过期才消失，最多 30 天（隐私政策和删除确认里写明了这一点；保留期调短以后更早）。这个期限靠每天的备份来执行：cron 停了，或者服务器整台没了，过期的备份就不会再被删，要你自己去存储桶里删掉过了保留期的。
 
-自带密钥改为只存在用户的浏览器里（ADR-0017）以后，数据库和备份里都没有自带密钥了。升级之前做的备份里还留着用户加密保存的旧 key，同样要等这些备份过期才消失，最多 30 天（ADR-0012 的 2026-10-10 修订）。
+自带密钥改为只存在用户的设备上（ADR-0017）以后，数据库和备份里都没有自带密钥了。升级之前做的备份里还留着用户加密保存的旧 key，同样要等这些备份过期才消失，最多 30 天（ADR-0012 的 2026-10-10 修订）。
 
 ## 从备份恢复
 
 默认用**最新的一份**。回滚到更早的备份，会让这段时间里删除了数据的用户重新出现（他们的对话和记忆会回来），尽量不要这样做；不得已时，恢复后在用户反馈里留意。
 
-恢复时不需要用 `EIDOLON_SECRET_KEY` 解开用户的自带密钥：备份里没有，自带密钥只存在用户的浏览器里。从升级之前的备份恢复时，里面加密的旧 key 会在后端启动时随旧表一起删掉，用户要在浏览器里重新填一次。
+恢复时不需要用 `EIDOLON_SECRET_KEY` 解开用户的自带密钥：备份里没有，自带密钥只存在用户的设备上。从升级之前的备份恢复时，里面加密的旧 key 会在后端启动时随旧表一起删掉，用户要在 App 里重新填一次。
 
 1. **下载**：在存储桶里（R2 在网页上就能下载）找到最新的 `eidolon-<UTC 时间>.db.gz.age`，下载到**你自己的电脑上**。
 2. **解密**（私钥只在你的电脑上用）：
@@ -823,7 +756,7 @@ EIDOLON_BACKUP_WARN_GB=3      # 存储桶里备份的总量超过它就提醒，
 
 - **打不开网站、证书申请失败**：`docker compose -f docker-compose.prod.yml logs caddy`。检查域名的 A 记录是否已经生效、80 和 443 端口是否放行。
 - **文字对话正常，语音一直「接通中」然后失败**：先看 `docker compose -f docker-compose.prod.yml logs coturn`。
-  - 日志里没有任何来自浏览器的请求：3478 端口（TCP 和 UDP）没有放行。
+  - 日志里没有任何来自客户端的请求：3478 端口（TCP 和 UDP）没有放行。
   - 有 `denied` 或 `Forbidden IP`：`EIDOLON_PUBLIC_IP`（或 `EIDOLON_PRIVATE_IP`）和服务器网卡上的地址对不上，见上方「部署」。
   - 有 `check_stun_auth: Cannot find credentials of user`：`.env` 里的 `EIDOLON_TURN_SECRET` 改过但只重启了其中一个服务，执行一次 `docker compose -f docker-compose.prod.yml up -d` 让两边一致。
 - **管理者打开 `/admin` 得到 404，设置页也没有「进入后台」**：`EIDOLON_ADMINS` 里的标识要和 `eidolon user list` 括号里的完全一样（`github:` 或 `google:` 加数字，不是邮箱），改完要 `docker compose -f docker-compose.prod.yml up -d` 重建后端，只 `restart` 读不到新的 `.env`。

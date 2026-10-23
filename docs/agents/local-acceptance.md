@@ -1,99 +1,136 @@
-# 本地用 Playwright 验收
+# 本地验收原生 App
 
-票里写「本地构建版上用 Playwright 验收」时照这里做。验收脚本是一次性的：放在 `frontend/scripts/_accept-*.mts`（这样才找得到 `playwright` 包），用 `node` 跑，验完删掉，不提交（规格「组件不写测试」）。截图写到 `.scratch/_accept/`，同样用完删掉。
+网页前端已经移除，客户端只有 `android/native/`。票里要求「本地构建版上验收」时照这里做：在本机的 Android 模拟器（或同一局域网的手机）上装构建版，连本机开发栈。截图用 `adb` 拍，写到 `.scratch/_accept/`，验完删掉，不提交。
 
 ## 起服务、停服务
 
-前端跑构建版，不跑 `next dev`（dev 模式会卡）：
-
 ```sh
-# 后端（:8000），.env 里要有 EIDOLON_DEV_LOGIN=1
-cd backend && uv run --quiet --env-file=../.env eidolon serve
-# 前端（:3000），在 frontend/ 下，先 npm run build
-BACKEND_URL=http://localhost:8000 EIDOLON_STAND_ASSETS_URL=<同 .env> npm run start
+bash scripts/dev-local.sh start     # 后端 :8000、Caddy :8080
+bash scripts/dev-local.sh status
+bash scripts/dev-local.sh stop
 ```
 
-两个都放后台跑。`EIDOLON_STAND_ASSETS_URL` 不带就看不到立绘（CSP 只许从这个地址加载）。停服务时，结束后台任务不够：`next start` 的子进程还占着 :3000，重新构建后它会继续服务旧页面。要按端口找到进程再结束（PowerShell：`Get-NetTCPConnection -LocalPort 3000 -State Listen` 拿 `OwningProcess`，再 `Stop-Process`），:8000 同理。改了前端代码要先停 :3000，再 `npm run build`，再起。
+后端在 `:8000`，Caddy 在 `:8080`，日志在 `logs/local-stack/`。`.env` 里要有 `EIDOLON_DEV_LOGIN=1`，`EIDOLON_DOMAIN` 留空，两者不能同时开。
 
-耗时长的活（`next build`、Playwright、后端完整 pytest）不要和别的 agent 同时跑，否则会卡住，一次只跑一个。
+停服务后按端口确认进程真的退了，再重新构建或改数据库：
+
+```sh
+ss -ltnp 'sport = :8000 or sport = :8080'
+```
+
+耗时的活（Gradle 构建、后端全量 pytest、缩略图渲染）一次只跑一个，别和别的任务抢 CPU。
+
+## 构建、安装
+
+```sh
+source ~/.config/eidolon-android/env.sh
+cd android
+./gradlew :native:assembleDebug
+adb install -r native/build/outputs/apk/debug/native-debug.apk
+```
+
+- 模拟器：`~/.local/opt/eidolon-android/sdk/emulator/emulator -avd eidolon-test &`，等 `adb wait-for-device` 和开机完成再装。
+- 只改了 Java/Kotlin 或资源时 `assembleDebug` 是增量的；单元测试用 `./gradlew :native:testDebugUnitTest`。
+- 要从头走首次启动、同意条款和登录，先 `adb shell pm clear sc.eidolon.nativeapp`。
+
+## 服务器地址
+
+- 模拟器访问本机用 `http://10.0.2.2:8080`。
+- 真机用 `scripts/dev-local.sh start` 打印的局域网地址，例如 `http://192.168.x.x:8080`。
+
+在「设置 → 服务器」里改。换地址会清掉原来的登录状态，需要重新登录。Caddy 的 `:8080` 同时提供 `/api`、`/stand-assets` 和 APK 下载页。
 
 ## 登录
 
-用开发登录按名字登录。本地库里 `Sallyn` 是管理者。请求要带 `Origin`，后端会检查：
+登录页的「开发登录」按名字直接登录（用户不存在就创建），只有服务器开了开发登录时才出现。本地库里 `Sallyn` 是管理者；验收专用的状态改一个单独的用户（例如 `gift-accept`），不要动 `Sallyn` 的数据。
 
-```ts
-await context.request.post(`${origin}/api/auth/dev-login`, { data: { name: "Sallyn" }, headers: { origin } });
-```
+第一次登录要同意隐私政策和使用条款、声明年满 13 岁。本地验收不需要 OAuth 应用。
 
-`frontend/scripts/screenshots.mts` 的 `signIn` 也是这么写的。
+## 麦克风与通话
 
-## 好感度和礼物
-
-开关默认开，本地 `.env` 配了判断模型、没设 `EIDOLON_AFFINITY_AND_GIFTS`，照常起后端就是开的。要看「未开放」时只在这次起的后端上关掉，不改 `.env`、不在后台改配置：
+先授予录音权限，免得系统弹窗挡着：
 
 ```sh
-cd backend && EIDOLON_AFFINITY_AND_GIFTS=0 uv run --quiet --env-file=../.env eidolon serve
+adb shell pm grant sc.eidolon.nativeapp android.permission.RECORD_AUDIO
 ```
 
-要的状态（背包里有几件、某位角色在冷却中、某一档）不靠抽奖和对话凑，造一个专用的开发登录用户（例如 `gift-accept`），同意条款（`POST /api/account/consent`，`{"agree_to_terms": true, "at_least_13": true}`），读一次 `/api/gifts` 让它建好行，再直接往 `backend/data/eidolon.db` 写：
+模拟器里在 Extended controls → Microphone 选「Virtual microphone uses host audio input」，或在 Host audio 里选本机的输入设备。
 
-- 背包：`INSERT INTO gift_backpacks VALUES ('<user_id>', '<礼物 id>', <件数>)`，礼物 id 和名字在 `characters/gifts.toml`
-- 抽奖次数：`UPDATE gift_balances SET draws = <n> WHERE user_id = '<user_id>'`
-- 好感度：`INSERT OR REPLACE INTO affinities (user_id, character_id, value, updated_at, cooling) VALUES ('<user_id>', '<角色 id>', <0–100>, '<ISO 时刻>', <冷却中 1，否则 0>)`
+打电话后依次检查：
 
-`user_id` 从 `GET /api/account` 拿。验完以这个用户登录调 `POST /api/account/delete`（`{"confirm": true}`），它的一切一起删掉，Sallyn 的数据不动。
+- 拨号中 → 接通，计时开始；
+- 服务器配了立绘时显示 Spine 立绘，右上角衣架能换衣装；
+- 她说日语时台词和中文字幕逐句出现，立绘有口型和表情；
+- 静音、免提切换有效；挂断后出现结束卡。
 
-## 通话
+启动失败会写 `EidolonCall` 日志：
 
-Chromium 用假麦克风，上下文给麦克风权限：
-
-```ts
-const browser = await chromium.launch({
-  args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"],
-});
-const context = await browser.newContext({ viewport, permissions: ["microphone"] });
+```sh
+adb logcat -s EidolonCall
 ```
 
-- 本地后端接得通，几秒到十几秒后变成「通话中」。但 Fish 直连不通，后端要走本机代理，否则接通了也没声音，日志里会有 `FishTTS … timed out during opening handshake`。语音服务不读 `HTTPS_PROXY`，只在这次起的后端上带上代理，不改 `.env`（地址取本机 `HTTPS_PROXY` 的值）：
+本地 Fish 直连不通时，接通了也没声音，后端日志里会有 `FishTTS … timed out during opening handshake`。临时在 `.env` 里加上本机代理，`stop` 再 `start`，验收完删掉这两行：
 
-  ```sh
-  cd backend && EIDOLON_PROXY_URL=http://127.0.0.1:10808 EIDOLON_PROXY_SERVICES=judge,tts uv run --quiet --env-file=../.env eidolon serve
-  ```
-
-  假麦克风只发提示音，听不出她的声音。要听声音，让用户在本机浏览器里打开 :3000 自己打。
-- 页首电话键在对话打开前是禁用的，先等它可点再点：
-
-  ```ts
-  await page.waitForFunction(() => !document.querySelector('button[aria-label="和櫻木真乃通话"]')?.hasAttribute("data-disabled"));
-  ```
-
-- 通话层滑上来要 410ms，量位置、截图前先等一下。
-- `page.goto` 是整页重载，会挂断通话。通话中换页要点页面上的链接和按钮（客户端跳转）。
-
-### 造出结束卡
-
-通话「因故结束」在本地也造得出来：拦下建立通话的请求 `/api/offer`，换成后端拒绝时的回答。
-
-| 回答 | 结束卡 |
-| --- | --- |
-| `429`，`{"detail": "…"}` | 超限额（主操作「去设置自带密钥」） |
-| 其他错误状态 | 没接通（主操作「重拨」） |
-
-先把请求挂起不回，等换到别的页面再放行，就能造出「在别的页面上因故结束」：
-
-```ts
-let held: Route | null = null;
-await page.route("**/api/offer", (route) => void (held = route));
-// …拨号、收起通话层、换到设置…
-await held!.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ detail: "这一小时的通话次数用完了" }) });
+```dotenv
+EIDOLON_PROXY_URL=http://127.0.0.1:10808
+EIDOLON_PROXY_SERVICES=judge,tts
 ```
 
-### 造出后端在通话里发的消息
+地址和端口按本机实际代理改。模拟器的假麦克风只发提示音，听不出她的声音；要听声音用同一 Wi-Fi 的真机打。
 
-`ended`（她挂断、到上限）、`done` 这些是接通以后从数据通道来的，拦 `/api/offer` 只能造出拨号被拒。要造它们，在页面里另起一个 `RTCPeerConnection` 冒充后端（Chromium 本机回环接得通）：
+## 造出结束卡
 
-1. `context.addInitScript` 注入假后端：`setRemoteDescription(offer)`，把 offer 里的音频收发器改成 `sendrecv` 并换上一条 `AudioContext().createMediaStreamDestination()` 的音轨，`createAnswer`，等 ICE 收集完再交出 SDP；`ondatachannel` 收到 `client-ready` 就回 `{"label":"rtvi-ai","type":"bot-ready","id":<同 id>,"data":{"version":"1.0.0"}}`。
-2. `page.route("**/api/offer")`：POST 用 `page.evaluate` 交给假后端应答，回 `{sdp, type: "answer", pc_id: "fake-pc"}`；PATCH（补发的 ICE 候选）交给它 `addIceCandidate`，回 `200 {}`。
-3. 接通后由假后端发 `{"label":"rtvi-ai","type":"server-message","data":<服务器消息>}`；挂断再发 `{"type":"signalling","message":{"type":"peerLeft"}}`。
+原生 App 没有 Playwright 的请求拦截，用后端状态造：
 
-这样造出来的对话事件等只在页面上，库里没有；对话列表按接口重读，看不到它。
+| 要看到的 | 怎么造 |
+|---|---|
+| 没接通、按钮「重试」 | 拨号前 `bash scripts/dev-local.sh stop`，拨完再 `start` |
+| 超限额 | 临时在 `.env` 加 `EIDOLON_CALLS_PER_HOUR=1`，`stop` 再 `start`；先打完一通，再拨第二通 |
+| 通话中掉线 | 接通后 `bash scripts/dev-local.sh stop` |
+| 到通话时长上限、她挂断 | 临时在 `.env` 加 `EIDOLON_CALL_MINUTES=1`，`stop` 再 `start`，接通后等一两分钟 |
+
+原生 App 的通话是全屏页面，返回即挂断，网页版「换到别的页面后通话因故结束」的场景不适用。
+
+## 造状态：礼物、好感度、每日任务
+
+用专用用户 `gift-accept` 在 App 里开发登录、同意条款，打开一次礼物页让后端建好行。然后停后端，直接改本机数据库：
+
+```sh
+bash scripts/dev-local.sh stop
+cd backend
+uv run python - <<'PY'
+import sqlite3
+from datetime import date
+
+db = sqlite3.connect("data/eidolon.db")
+user = db.execute("SELECT id FROM users WHERE name = 'gift-accept'").fetchone()[0]
+db.execute(
+    "INSERT OR REPLACE INTO gift_backpacks (user_id, gift_id, count) VALUES (?, ?, ?)",
+    (user, "cake", 3),
+)
+db.execute(
+    "INSERT INTO gift_balances (user_id, draws, given_on) VALUES (?, ?, ?)"
+    " ON CONFLICT(user_id) DO UPDATE SET draws = excluded.draws",
+    (user, 10, date.today().isoformat()),
+)
+db.execute(
+    "INSERT OR REPLACE INTO affinities"
+    " (user_id, character_id, value, updated_at, cooling, gained_today, gained_on)"
+    " VALUES (?, ?, ?, ?, 0, 0, NULL)",
+    (user, "mano", 80, "2026-10-23T12:00:00+00:00"),
+)
+db.commit()
+PY
+bash scripts/dev-local.sh start
+```
+
+礼物 id 和名字在 `characters/gifts.toml`，角色 id 在 `characters/characters.toml`。验完以 `gift-accept` 登录，在「设置 → 删除账号」里删掉它，数据一起删除，`Sallyn` 不受影响。
+
+## 截图
+
+```sh
+mkdir -p .scratch/_accept
+adb exec-out screencap -p > .scratch/_accept/call-ended.png
+```
+
+验收完 `bash scripts/dev-local.sh stop`，删掉 `.scratch/_accept/`。
