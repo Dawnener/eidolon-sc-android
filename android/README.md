@@ -142,6 +142,10 @@ EIDOLON_LAN_IP=<你的局域网 IP> bash scripts/dev-local.sh start
    - 原生 App Debug：`/apk/native/debug/native-debug.apk`
 3. 按提示允许浏览器「安装未知应用」。
 
+公网下载也放在 GitHub Releases，固定地址是
+`https://github.com/MikiHoshiiP/eidolon-sc-android/releases/latest/download/native-release.apk`。
+推送 `app-v0.1.2` 这样的标签时，`.github/workflows/android-release.yml` 会把部署站点上同一份已签名 APK 同步到 Release，不重新构建。
+
 原生 App 首次启动会连内置的公开部署地址；登录、同意条款后进入对话列表。需要换服务器时在「设置 → 服务器」修改。
 
 原生 App 会自动记住上次的服务器地址。
