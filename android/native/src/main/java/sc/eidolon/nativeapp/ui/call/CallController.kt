@@ -173,7 +173,8 @@ class CallController(
                 }
             } catch (error: kotlinx.coroutines.CancellationException) {
                 throw error
-            } catch (error: Exception) {
+            } catch (error: Throwable) {
+                Log.e("EidolonCall", "call start failed", error)
                 val raw = when (error) {
                     is RTVIException -> error.error.exception?.message ?: error.message
                     else -> error.message

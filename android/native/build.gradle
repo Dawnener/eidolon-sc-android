@@ -17,6 +17,10 @@ android {
         versionName '0.1.0'
         // 首次启动直接连这个部署；用户仍然可以在设置里更换服务器。
         buildConfigField "String", "DEFAULT_SERVER_URL", '"https://eidolon.shiny-colors-ai.xyz"'
+        // 只打手机需要的 ABI；x86 模拟器用的两份 WebRTC 库会让 APK 多出近 30 MB。
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
