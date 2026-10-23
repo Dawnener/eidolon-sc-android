@@ -48,11 +48,9 @@ from eidolon.clock import Clock
 from eidolon.data_access import Database
 from eidolon.engine import ConversationEngine
 from eidolon.live_config import LiveConfig
-from eidolon.own_keys import OwnKeys
 from eidolon.producer import ProducerProfile, effective_timezone
 from eidolon.push import PushEvent, PushHub
 from eidolon.randomness import Random
-from eidolon.reach_out_models import ReachOutModels
 from eidolon.store import (
     Conversation,
     CurrentConversation,
@@ -148,11 +146,11 @@ class _Standing:
 
 
 class ReachOuts:
-    """Her reach-outs, in `db` beside the conversations of `store`, on the user's own model
-    kept for them (`reach_out_models`) or else the deployer's models of `config`, each
-    recorded in `activity`, not to users whose own limit on turns is 0; `in_call` says
-    whether there is a call in a conversation, and `random` draws when. A time that came
-    before `clock` says it is as they begin is missed."""
+    """Her reach-outs, in `db` beside the conversations of `store`, on the deployer's
+    reach-out model (`REACH_OUT_LLM_*`) or else their chat model, each recorded in
+    `activity`, not to users whose own limit on turns is 0; `in_call` says whether there
+    is a call in a conversation, and `random` draws when. A time that came before `clock`
+    says it is as they begin is missed."""
 
     def __init__(
         self,
@@ -161,8 +159,6 @@ class ReachOuts:
         engine: ConversationEngine,
         characters: Mapping[str, Character],
         config: LiveConfig,
-        reach_out_models: ReachOutModels,
-        own_keys: OwnKeys,
         pushes: PushHub,
         affinities: Affinities,
         activity: ActivityLog,
@@ -175,8 +171,6 @@ class ReachOuts:
         self._engine = engine
         self._characters = characters
         self._config = config
-        self._reach_out_models = reach_out_models
-        self._own_keys = own_keys
         self._pushes = pushes
         self._affinities = affinities
         self._activity = activity
@@ -342,24 +336,16 @@ class ReachOuts:
             return
         if self._talking(conversation.id):
             return
-        # The user's own model kept for reach-outs comes first; the deployer's is the
-        # fallback, and without either there is no reach-out in this conversation.
-        stored = await asyncio.to_thread(self._reach_out_models.load, conversation.user_id)
-        release = _nothing
-        if stored is not None:
-            llm = self._own_keys.stored_chat_llm(stored)
-            own_llm = True
-        elif self._config.has_service("chat_llm"):
-            lease = self._config.lease()
-            assert lease.keys.chat_llm is not None
-            llm = lease.keys.chat_llm
-            release = lease.release
-            own_llm = False
-        else:
+        # The deployer's reach-out model, or else their chat model; without either there
+        # is no reach-out in this conversation.
+        lease = self._config.lease()
+        llm = lease.keys.reach_out_llm or lease.keys.chat_llm
+        if llm is None:
+            lease.release()
             return
         recording = self._activity.begin(
             "reach_out", conversation.user_id, conversation.character_id,
-            own_llm=own_llm, exempt=own_llm,
+            own_llm=False, exempt=False,
         )
         try:
             with recording.current():
@@ -372,7 +358,7 @@ class ReachOuts:
             await self._put_off(conversation.id, contact, now + self._interval(due.tier))
             return
         finally:
-            release()
+            lease.release()
         try:
             reach_out = await self._store.add_reach_out(
                 conversation.id, said, contact, self._in_call(conversation.id)
@@ -462,10 +448,6 @@ def _set_due(db: sqlite3.Connection, conversation_id: str, contact_at: str, due_
         "UPDATE reach_out_schedules SET due_at = ? WHERE conversation_id = ? AND contact_at = ?",
         (due_at, conversation_id, contact_at),
     )
-
-
-def _nothing() -> None:
-    pass
 
 
 def _at_night(at: datetime, zone: ZoneInfo) -> bool:

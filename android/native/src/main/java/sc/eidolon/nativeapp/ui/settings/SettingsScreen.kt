@@ -48,7 +48,6 @@ fun SettingsScreen(
     account: Account,
     onOpenProfile: () -> Unit,
     onOpenOwnKeys: () -> Unit,
-    onOpenReachOutModel: () -> Unit,
     onOpenMemories: () -> Unit,
     onOpenStats: () -> Unit,
     onOpenDataPackage: () -> Unit,
@@ -132,12 +131,6 @@ fun SettingsScreen(
             onOpenBatterySettings = {
                 context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
             },
-        )
-        HorizontalDivider()
-        SettingsRow(
-            title = "搭话模型",
-            subtitle = "服务器加密保存，只用于搭话",
-            onClick = onOpenReachOutModel,
         )
         HorizontalDivider()
         SettingsRow(

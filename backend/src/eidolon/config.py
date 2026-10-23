@@ -341,6 +341,12 @@ class LLMSettings:
         return cls._from_env("BACKGROUND", fallback="CHAT")
 
     @classmethod
+    def reach_out_from_env(cls) -> "LLMSettings | None":
+        """The deployer's model for reach-outs, apart from the chat model: a deployment
+        whose users bring their own LLM can still let her reach out."""
+        return cls._from_env("REACH_OUT")
+
+    @classmethod
     def _from_env(cls, slot: str, fallback: str | None = None) -> "LLMSettings | None":
         slot_configured = any(
             os.environ.get(f"{slot}_LLM_{name}", "").strip() for name in _LLM_FIELDS
@@ -434,6 +440,9 @@ class Settings:
     and call must bring the user's own LLM (ADR-0028)."""
     background_llm: LLMSettings | None = None
     """Left out, the background model is the chat model's; None without either."""
+    reach_out_llm: LLMSettings | None = None
+    """The deployer's model for reach-outs, apart from the chat model; none to use the
+    chat model instead, and without either she does not reach out."""
     call_reasoning_effort: ReasoningEffort | None = None
     """The chat model's in calls (`CHAT_LLM_CALL_REASONING_EFFORT`): see `chat_model`."""
     ice_servers: list[IceServer] = field(default_factory=lambda: list(DEFAULT_ICE_SERVERS))
@@ -584,6 +593,7 @@ class Settings:
             characters_path=characters_path_from_env(),
             chat_llm=chat_llm,
             background_llm=background_llm,
+            reach_out_llm=LLMSettings.reach_out_from_env(),
             call_reasoning_effort=call_effort,
             ice_servers=_ice_servers(os.environ.get("EIDOLON_ICE_SERVERS")),
             turn=TurnSettings.from_env(),

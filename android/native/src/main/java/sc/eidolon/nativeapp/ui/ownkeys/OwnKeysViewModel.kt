@@ -9,7 +9,6 @@ import kotlinx.coroutines.launch
 import sc.eidolon.nativeapp.data.api.EidolonApi
 import sc.eidolon.nativeapp.data.api.ExemptionDto
 import sc.eidolon.nativeapp.data.local.OwnKeysStore
-import sc.eidolon.nativeapp.model.OwnImageRequest
 import sc.eidolon.nativeapp.model.OwnKeysRequest
 import sc.eidolon.nativeapp.model.OwnKeysRules
 import sc.eidolon.nativeapp.model.OwnLlmRequest
@@ -17,7 +16,7 @@ import sc.eidolon.nativeapp.model.OwnMemoryLlmRequest
 import sc.eidolon.nativeapp.model.OwnSttRequest
 import sc.eidolon.nativeapp.model.OwnTtsRequest
 
-enum class OwnKeySection { Llm, MemoryLlm, Tts, Stt, Image }
+enum class OwnKeySection { Llm, MemoryLlm, Tts, Stt }
 
 data class OwnKeysState(
     val loading: Boolean = true,
@@ -109,20 +108,6 @@ class OwnKeysViewModel(
         "已保存语音识别"
     }
 
-    fun saveImage(request: OwnImageRequest) = launchSave {
-        val resolved = request.copy(
-            apiKey = request.apiKey.ifBlank { state.keys.image?.apiKey.orEmpty() },
-        )
-        OwnKeysRules.validateImage(resolved)?.let { error(it) }
-        val checked = api.checkImage(resolved)
-        val normalized = resolved.copy(
-            baseUrl = checked.baseUrl ?: resolved.baseUrl,
-            model = checked.model ?: resolved.model,
-        )
-        persist(state.keys.copy(image = normalized))
-        "已保存生图"
-    }
-
     fun delete(section: OwnKeySection) {
         if (state.busy) return
         viewModelScope.launch {
@@ -133,7 +118,6 @@ class OwnKeysViewModel(
                     OwnKeySection.MemoryLlm -> state.keys.copy(memoryLlm = null)
                     OwnKeySection.Tts -> state.keys.copy(tts = null)
                     OwnKeySection.Stt -> state.keys.copy(stt = null)
-                    OwnKeySection.Image -> state.keys.copy(image = null)
                 }
                 persist(keys)
                 state = state.copy(notice = "已删除")

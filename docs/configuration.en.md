@@ -401,10 +401,10 @@ Switching the format doesn't change the address; when you switch, fix the addres
 
 When a user has been away a while, the character says a few words first in the current conversation, picking up on what they last talked about or recent news of the user she remembers. The closer she is to them, the sooner she comes; she doesn't reach out while cold, distant or in cooldown, nor at night ([ADR-0026](adr/0026-reach-outs-are-not-turns.md)). Users can turn it off on the settings page's 「搭话」 (Reach-outs) tab.
 
-- **Switch**: Off by default. Set `EIDOLON_REACH_OUTS=1` in `.env` to turn it on, or switch it in the 「搭话」 (Reach-outs) card on the admin console's config page, which takes precedence over `.env`. It can be on in bring-your-own-key mode too: without a deployer chat model, only users who set their own reach-out model are reached out to.
-- **Model**: The model the user saved under 「设置 → 搭话模型」 (Settings → Reach-out model) is used first; the deployer's chat model is the fallback. A user's own model is encrypted on the server with `EIDOLON_SECRET_KEY` (set it first), used only for reach-outs and never for text turns; the server can decrypt it. With neither model, that user is not reached out to.
+- **Switch**: Off by default. Set `EIDOLON_REACH_OUTS=1` in `.env` to turn it on, or switch it in the 「搭话」 (Reach-outs) card on the admin console's config page, which takes precedence over `.env`.
+- **Model**: Reach-outs always use the deployer's model: `REACH_OUT_LLM_*` first (which can be set on its own, even in bring-your-own-key mode), then the deployer's chat model (`CHAT_LLM_*`). With neither, she does not reach out. Users no longer configure a reach-out model in the app.
 - **Daily limit**: By default each user is reached out to at most 3 times a day (the day going by the time zone in their producer profile, or Beijing time if none is set); change it in the same card.
-- **Cost**: A user's own reach-out model costs the deployer nothing; the deployer's model is at the deployer's expense. Neither counts towards the user's limits.
+- **Cost**: Reach-outs run on the deployer's model at the deployer's expense, and do not count towards the user's limits.
 
 ## Sign-in, users and usage limits
 

@@ -11,7 +11,6 @@ object Routes {
     const val Settings = "settings"
     const val Profile = "settings/profile"
     const val OwnKeys = "settings/own-keys"
-    const val ReachOutModel = "settings/reach-out-model"
     const val Memories = "settings/memories"
     const val Stats = "settings/stats"
     const val DataPackage = "settings/data-package"

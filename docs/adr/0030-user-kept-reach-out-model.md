@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0032
 ---
 
 # 搭话模型可以由用户提供，服务器加密保存

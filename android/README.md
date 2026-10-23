@@ -10,10 +10,10 @@
 source ~/.config/eidolon-android/env.sh
 cd android
 ./gradlew :native:assembleDebug
-# 产物：android/native/build/outputs/apk/debug/Eidolon-SC-0.1.7-debug.apk
+# 产物：android/native/build/outputs/apk/debug/Eidolon-SC-0.1.8-debug.apk
 
 ./gradlew :native:assembleRelease
-# 产物：android/native/build/outputs/apk/release/Eidolon-SC-0.1.7-release.apk
+# 产物：android/native/build/outputs/apk/release/Eidolon-SC-0.1.8-release.apk
 ```
 
 Release 目前用自动生成的 debug keystore 签名，方便侧载和覆盖安装；它不是正式发布签名。
@@ -23,9 +23,9 @@ Release 目前用自动生成的 debug keystore 签名，方便侧载和覆盖�
 - 首次安装会看到深色欢迎页，点「使用 GitHub 登录」直接打开 GitHub 授权；服务器地址默认是内置的公开部署，不需要填写；同意条款后进入主界面；
 - GitHub 登录、同意条款；其他使用开发登录的服务器仍可在登录页使用开发用户名；
 - 对话列表（按角色搜索）、流式日语回复 + 中文字幕、开新对话；
-- 设置：服务器、制作人档案（称呼/性别/时区/生日）、自带密钥（LLM / 后台 LLM / TTS / STT / 生图）、搭话开关、搭话模型、记忆、统计、退出登录、删除账号；
+- 设置：制作人档案（称呼/性别/时区/生日）、自带密钥（LLM / 后台 LLM / TTS / STT）、搭话开关、记忆、统计、退出登录、删除账号；
 - 历史对话：聊天页右上角菜单列出这位角色的所有对话，可只读查看过去那段、删除当前那段以外的旧对话；
-- 搭话：显示角色主动发来的消息、未读圆点；搭话模型可以在 App 里填，服务器用 `EIDOLON_SECRET_KEY` 加密保存；
+- 搭话：显示角色主动发来的消息、未读圆点；搭话模型由服务器统一配置，App 里不再填写；
 - 推送：设置里的开关默认关；开启后前台服务维持 SSE 长连接，收到搭话弹系统通知，点开进入对应角色对话；关闭开关会立即停止服务；
 - 礼物 / 好感度 / 成就 / 每日任务：底部「礼物」页支持抽奖、背包、送礼物、重置卡、每日任务和全角色成就；聊天里显示好感度徽章、升降提示、冷却，以及该角色的成就；
 - 通话：全屏 WebRTC 通话（Pipecat SmallWebRTC）、麦克风权限、静音/免提、实时日语台词与中文字幕、计时和结束原因；服务器配了立绘素材时，用官方 Spine 3.6 runtime 显示她的待机、眨眼、表情和口型；右上角衣架可以按服务器上的衣装清单换私服/演出服，选择在本机按角色记住；
@@ -48,7 +48,7 @@ Release 目前用自动生成的 debug keystore 签名，方便侧载和覆盖�
 
 ### 服务器地址
 
-原生 App 的 `DEFAULT_SERVER_URL` 在 `android/native/build.gradle`，当前内置公开部署地址；首次启动不需要填写。仍可在「设置 → 服务器」换成别的部署。启动本地栈后，脚本会打印当前局域网 IP；换 Wi-Fi 或 IP 变了，在 App 的「设置 → 服务器」改即可。
+原生 App 的 `DEFAULT_SERVER_URL` 在 `android/native/build.gradle`，当前内置公开部署地址；首次启动不需要填写，设置里也不再提供更换。要换部署，改 `DEFAULT_SERVER_URL` 后重新构建；首次启动连不上服务器时，仍会进入服务器设置页让用户重新填写。启动本地栈后，脚本会打印当前局域网 IP。
 
 ### 通话立绘
 
@@ -89,9 +89,14 @@ Release 目前用自动生成的 debug keystore 签名，方便侧载和覆盖�
   ```dotenv
   EIDOLON_REACH_OUTS=1
   EIDOLON_SECRET_KEY=<用 openssl rand -hex 32 生成>
+  REACH_OUT_LLM_BASE_URL=https://api.deepseek.com/anthropic
+  REACH_OUT_LLM_API_KEY=<你的 key>
+  REACH_OUT_LLM_MODEL=deepseek-v4-flash
+  REACH_OUT_LLM_PROTOCOL=anthropic
+  REACH_OUT_LLM_REASONING_EFFORT=low
   ```
 
-  `EIDOLON_SECRET_KEY` 用来加密用户的搭话模型；不设置时 App 里的「搭话模型」无法保存。
+  `EIDOLON_SECRET_KEY` 用来加密后台里保存的 key；搭话统一使用 `REACH_OUT_LLM_*`（没有时退回 `CHAT_LLM_*`）。
 
   礼物、好感度、成就和每日任务需要：
 
@@ -138,24 +143,22 @@ EIDOLON_LAN_IP=<你的局域网 IP> bash scripts/dev-local.sh start
 
 1. 手机浏览器打开 `http://<局域网 IP>:8080/`，确认页面能显示。打不开先看下面的防火墙。
 2. 打开 `http://<局域网 IP>:8080/apk/`，选择要装的包：
-   - 原生 App Release：`/apk/native/release/Eidolon-SC-0.1.7-release.apk`（推荐）
-   - 原生 App Debug：`/apk/native/debug/Eidolon-SC-0.1.7-debug.apk`
+   - 原生 App Release：`/apk/native/release/Eidolon-SC-0.1.8-release.apk`（推荐）
+   - 原生 App Debug：`/apk/native/debug/Eidolon-SC-0.1.8-debug.apk`
 3. 按提示允许浏览器「安装未知应用」。
 
 公网下载也放在 GitHub Releases，地址形如
-`https://github.com/MikiHoshiiP/eidolon-sc-android/releases/download/app-v0.1.7/Eidolon-SC-0.1.7-release.apk`。
-推送 `app-v0.1.7` 这样的标签时，`.github/workflows/android-release.yml` 会把部署站点上同一份已签名 APK 同步到 Release，不重新构建。
+`https://github.com/MikiHoshiiP/eidolon-sc-android/releases/download/app-v0.1.8/Eidolon-SC-0.1.8-release.apk`。
+推送 `app-v0.1.8` 这样的标签时，`.github/workflows/android-release.yml` 会把部署站点上同一份已签名 APK 同步到 Release，不重新构建。
 
-原生 App 首次启动会连内置的公开部署地址；登录、同意条款后进入对话列表。需要换服务器时在「设置 → 服务器」修改。
-
-原生 App 会自动记住上次的服务器地址。
+原生 App 首次启动会连内置的公开部署地址；登录、同意条款后进入对话列表。设置里不再提供更换服务器；首次启动连不上时仍会进入服务器设置页。
 
 ## 返回键
 
 **原生 App**：
 
 - 聊天页返回对话列表；查看历史对话时，返回先回到当前对话；
-- 设置子页（档案、自带密钥、记忆、搭话模型、服务器）返回设置首页；
+- 设置子页（档案、自带密钥、记忆）返回设置首页；
 - 设置和对话列表按返回退出应用。
 
 ## 防火墙

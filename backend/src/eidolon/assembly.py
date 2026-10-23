@@ -143,8 +143,6 @@ class Backend:
     """Exports users' data packages, and imports them."""
     reach_outs: ReachOuts
     """Has characters reach out to users once their time comes."""
-    reach_out_models: ReachOutModels
-    """Users' own models for reach-outs, kept encrypted with the deployment's secret key."""
     pushes: PushHub
     """Reach-outs just recorded, for clients keeping a push connection open."""
     world: World | None = None
@@ -235,6 +233,9 @@ def build(
     closers: list[Closer] = [database.close]
 
     store = Store(database)
+    # Legacy storage for models users kept for reach-outs. Reach-outs now use the
+    # deployer's REACH_OUT_LLM_*, and the API no longer writes here; it is opened so
+    # deleting a user still deletes an old row, and the table stays accounted for.
     reach_out_models = ReachOutModels(settings.database_path, settings.secret_key)
     closers.append(reach_out_models.close)
     pushes = PushHub()
@@ -275,10 +276,10 @@ def build(
         speech=speech, routes=routes, image_client=image_client,
         **({"reach": reach} if reach is not None else {}),
     )
-    if settings.reach_outs and settings.chat_llm is None:
+    if settings.reach_outs and settings.chat_llm is None and settings.reach_out_llm is None:
         log.warning(
-            "EIDOLON_REACH_OUTS is on with no deployer chat model; only users who set their "
-            "own reach-out model will be reached out to"
+            "EIDOLON_REACH_OUTS is on with neither a chat model nor REACH_OUT_LLM_*: "
+            "she will not reach out"
         )
     closers.append(config.aclose)
     if own_llm_service is None:  # users' own LLMs write down memories too
@@ -400,8 +401,8 @@ def build(
     engine.on_cooled(calls.cooled)
     engine.on_ended(calls.conversation_ended)
     reach_outs = ReachOuts(
-        database, store, engine, characters, config, reach_out_models, own_keys,
-        pushes, affinities, activity, calls.in_call, clock, random or secure_random,
+        database, store, engine, characters, config, pushes,
+        affinities, activity, calls.in_call, clock, random or secure_random,
     )
     config.on_change(gifts.notice)
     return Backend(
@@ -434,7 +435,6 @@ def build(
         service_status=service_status,
         data_packages=DataPackages(database, store, memories, characters, gift_catalog, clock),
         reach_outs=reach_outs,
-        reach_out_models=reach_out_models,
         pushes=pushes,
         world=world,
         corpus=corpus,

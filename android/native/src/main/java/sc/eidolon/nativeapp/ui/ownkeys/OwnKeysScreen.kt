@@ -40,7 +40,6 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.serialization.json.jsonObject
 import sc.eidolon.nativeapp.AppContainer
 import sc.eidolon.nativeapp.core.EidolonJson
-import sc.eidolon.nativeapp.model.OwnImageRequest
 import sc.eidolon.nativeapp.model.OwnKeysRequest
 import sc.eidolon.nativeapp.model.OwnKeysRules
 import sc.eidolon.nativeapp.model.OwnLlmRequest
@@ -208,27 +207,8 @@ fun OwnKeysScreen(container: AppContainer, onBack: () -> Unit) {
                 )
             }
 
-            KeySection(
-                title = "生图（NovelAI / OpenAI 格式）",
-                summary = state.keys.image?.let {
-                    "${it.model} · ${OwnKeysRules.masked(it.apiKey)}"
-                } ?: "未填写",
-                configured = state.keys.image != null,
-                editing = state.editing == OwnKeySection.Image,
-                busy = state.busy,
-                onEdit = { vm.edit(OwnKeySection.Image) },
-                onDelete = { vm.delete(OwnKeySection.Image) },
-            ) {
-                ImageForm(
-                    existing = state.keys.image,
-                    busy = state.busy,
-                    onCancel = vm::cancelEdit,
-                    onSave = { vm.saveImage(it) },
-                )
-            }
-
             Text(
-                "保存前会向对应服务发一次很小的检查请求；生图的检查会实际生成一张图片，按你的额度计费。",
+                "保存前会向对应服务发一次很小的检查请求。",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -509,68 +489,3 @@ private fun SttForm(
     }
 }
 
-@Composable
-private fun ImageForm(
-    existing: OwnImageRequest?,
-    busy: Boolean,
-    onCancel: () -> Unit,
-    onSave: (OwnImageRequest) -> Unit,
-) {
-    var apiFormat by remember { mutableStateOf(existing?.apiFormat ?: "novelai") }
-    var baseUrl by remember { mutableStateOf(existing?.baseUrl ?: "https://image.novelai.net") }
-    var apiKey by remember { mutableStateOf("") }
-    var model by remember { mutableStateOf(existing?.model ?: "nai-diffusion-5-curated") }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(
-            value = apiFormat,
-            onValueChange = { apiFormat = it },
-            label = { Text("接口格式（novelai / openai）") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = baseUrl,
-            onValueChange = { baseUrl = it },
-            label = { Text("接口地址") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = apiKey,
-            onValueChange = { apiKey = it },
-            label = { Text("生图 API Key") },
-            placeholder = { Text(existing?.let { "留空沿用（末 4 位 ${OwnKeysRules.last4(it.apiKey)}）" } ?: "") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        )
-        OutlinedTextField(
-            value = model,
-            onValueChange = { model = it },
-            label = { Text("模型名") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Text(
-            "保存时会在你的额度上实际生成一张图片来验证。",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onCancel, enabled = !busy) { Text("取消") }
-            Button(
-                onClick = {
-                    onSave(
-                        OwnImageRequest(
-                            apiFormat = apiFormat,
-                            baseUrl = baseUrl,
-                            apiKey = apiKey,
-                            model = model,
-                        ),
-                    )
-                },
-                enabled = !busy,
-            ) { Text(if (busy) "正在验证…" else "保存并验证") }
-        }
-    }
-}

@@ -417,6 +417,8 @@ class DeployerKeys:
     call_llm: ChatLLM | None = None
     """The chat model as calls' turns use it, at its reasoning effort in calls; None for
     `chat_llm`."""
+    reach_out_llm: ChatLLM | None = None
+    """The deployer's model for reach-outs; None for `chat_llm`."""
 
     def lease(self) -> "DeployerLease":
         """These keys, which never change, for a turn or call."""

@@ -55,7 +55,6 @@ import sc.eidolon.nativeapp.ui.gifts.GiftsScreen
 import sc.eidolon.nativeapp.ui.memories.MemoriesScreen
 import sc.eidolon.nativeapp.ui.ownkeys.OwnKeysScreen
 import sc.eidolon.nativeapp.ui.profile.ProfileScreen
-import sc.eidolon.nativeapp.ui.reachout.ReachOutModelScreen
 import sc.eidolon.nativeapp.ui.settings.SettingsScreen
 import sc.eidolon.nativeapp.ui.stats.StatsScreen
 
@@ -292,7 +291,6 @@ fun MainScaffold(container: AppContainer, account: Account) {
                         account = account,
                         onOpenProfile = { nav.navigate(Routes.Profile) },
                         onOpenOwnKeys = { nav.navigate(Routes.OwnKeys) },
-                        onOpenReachOutModel = { nav.navigate(Routes.ReachOutModel) },
                         onOpenMemories = { nav.navigate(Routes.Memories) },
                         onOpenStats = { nav.navigate(Routes.Stats) },
                         onOpenDataPackage = { nav.navigate(Routes.DataPackage) },
@@ -303,9 +301,6 @@ fun MainScaffold(container: AppContainer, account: Account) {
                 }
                 composable(Routes.OwnKeys) {
                     OwnKeysScreen(container) { nav.popBackStack() }
-                }
-                composable(Routes.ReachOutModel) {
-                    ReachOutModelScreen(container) { nav.popBackStack() }
                 }
                 composable(Routes.Memories) {
                     MemoriesScreen(container) { nav.popBackStack() }

@@ -174,15 +174,6 @@ data class ProducerProfile(
 
 data class SignInMethod(val provider: String, val displayName: String? = null, val email: String? = null)
 
-/** The model kept on the server for reach-outs; the key itself never comes back. */
-data class ReachOutModel(
-    val configured: Boolean,
-    val baseUrl: String? = null,
-    val model: String? = null,
-    val protocol: String? = null,
-    val last4: String? = null,
-)
-
 data class Memory(
     val id: Int,
     val text: String,

@@ -946,12 +946,15 @@ class LiveConfig:
         self._routes.replace(self.proxy_settings)
         self._chat: Swappable[ChatModels, ChatModelSettings] | None = None
         self._memory: Swappable[ChatLLM, LLMSettings] | None = None
+        self._reach_out: Swappable[ChatLLM, LLMSettings] | None = None
         chat = self.chat_model
         if chat is not None:
             self._chat = Swappable(clients.chat_models(chat), chat)
         memory = self.memory_llm
         if memory is not None:
             self._memory = Swappable(clients.memory_llm(memory), memory)
+        if (reach_out := settings.reach_out_llm) is not None:
+            self._reach_out = Swappable(clients.memory_llm(reach_out), reach_out)
         self._judge: Swappable[JudgeModel, JudgeSettings] | None = None
         if (judge := self.judge_settings) is not None:
             self._judge = Swappable(clients.judge_model(judge), judge)
@@ -1166,7 +1169,10 @@ class LiveConfig:
         the judge model judges by its own thresholds, whatever replaces it meanwhile."""
         chat = self._chat.lease() if self._chat is not None else None
         memory = self._memory.lease() if self._memory is not None else None
-        held: list[Lease[Any, Any]] = [lease for lease in (chat, memory) if lease is not None]
+        reach_out = self._reach_out.lease() if self._reach_out is not None else None
+        held: list[Lease[Any, Any]] = [
+            lease for lease in (chat, memory, reach_out) if lease is not None
+        ]
         emotions = None
         if self._judge is not None:
             judge = self._judge.lease()
@@ -1196,6 +1202,9 @@ class LiveConfig:
             call_llm=metered_llm(
                 chat.client.call, self._activity, llm_origin("chat_llm", chat.settings.call)
             ) if chat is not None else None,
+            reach_out_llm=metered_llm(
+                reach_out.client, self._activity, llm_origin("chat_llm", reach_out.settings)
+            ) if reach_out is not None else None,
             **({"hold_background": hold_background} if hold_background is not None else {}),
         )
         return DeployerLease(keys, lambda: _release(held))

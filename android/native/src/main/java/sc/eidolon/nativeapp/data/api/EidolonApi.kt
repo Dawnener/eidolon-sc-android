@@ -46,7 +46,6 @@ import sc.eidolon.nativeapp.model.LatestConversation
 import sc.eidolon.nativeapp.model.LlmModelsRequest
 import sc.eidolon.nativeapp.model.LlmModelsResponse
 import sc.eidolon.nativeapp.model.Memory
-import sc.eidolon.nativeapp.model.OwnImageRequest
 import sc.eidolon.nativeapp.model.OwnKeysRequest
 import sc.eidolon.nativeapp.model.OwnKeysRules
 import sc.eidolon.nativeapp.model.OwnLlmRequest
@@ -56,7 +55,6 @@ import sc.eidolon.nativeapp.model.OwnTtsRequest
 import sc.eidolon.nativeapp.model.OutfitCard
 import sc.eidolon.nativeapp.model.ProducerProfile
 import sc.eidolon.nativeapp.model.Recorded
-import sc.eidolon.nativeapp.model.ReachOutModel
 import sc.eidolon.nativeapp.model.ResetOutcome
 import sc.eidolon.nativeapp.model.Stats
 import sc.eidolon.nativeapp.model.SttCheckResponse
@@ -103,20 +101,6 @@ class EidolonApi(
             "/api/account/reach-outs",
             json.encodeToString(ReachOutSwitchRequest.serializer(), ReachOutSwitchRequest(on)),
         )
-    }
-
-    suspend fun reachOutModel(): ReachOutModel =
-        getJson<ReachOutModelDto>("/api/account/reach-out-llm").toDomain()
-
-    suspend fun saveReachOutModel(request: OwnMemoryLlmRequest) {
-        putNoContent(
-            "/api/account/reach-out-llm",
-            json.encodeToString(OwnMemoryLlmRequest.serializer(), request),
-        )
-    }
-
-    suspend fun deleteReachOutModel() {
-        deleteNoContent("/api/account/reach-out-llm")
     }
 
     suspend fun profile(): ProducerProfile = getJson<ProfileDto>("/api/profile").toDomain()
@@ -389,9 +373,6 @@ class EidolonApi(
 
     suspend fun checkStt(request: OwnSttRequest): SttCheckResponse =
         postJson("/api/account/keys/stt/check", request)
-
-    suspend fun checkImage(request: OwnImageRequest): KeyCheckResponse =
-        postJson("/api/account/keys/image/check", request)
 
     suspend fun listLlmModels(request: LlmModelsRequest): LlmModelsResponse =
         postJson("/api/account/keys/llm/models", request)
