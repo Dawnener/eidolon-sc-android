@@ -124,5 +124,15 @@ docker compose -f docker-compose.prod.yml logs coturn | tail -50
 
 - TURN 必须直连公网 IP，不能经过 Cloudflare 代理域名。
 - 3 Mbps 是整机共享：有人在下载 APK/立绘时会抢占通话带宽。
+- 香港等境外链路上 Linux 默认的 CUBIC 容易跑不满带宽，手机下载 33 MB 的 APK 会很慢。启用 BBR 后本机实测从约 0.4 Mbps 提升到 17 Mbps：
+
+  ```bash
+  sudo modprobe tcp_bbr
+  echo tcp_bbr | sudo tee /etc/modules-load.d/bbr.conf
+  printf 'net.core.default_qdisc=fq\nnet.ipv4.tcp_congestion_control=bbr\n' | sudo tee /etc/sysctl.d/99-bbr.conf
+  sudo sysctl --system
+  ```
+
+  重启后用 `sysctl net.ipv4.tcp_congestion_control` 确认仍是 `bbr`。
 - 2G 内存不要按默认 10 路并发跑；先设 `EIDOLON_CONCURRENT_CALLS=2`。
 - 大陆 ECS 直接用域名提供 80/443 需要 ICP 备案；只做 TURN 或走 Cloudflare Tunnel 时按对应方式处理。
