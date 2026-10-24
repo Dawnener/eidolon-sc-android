@@ -72,6 +72,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -85,6 +86,7 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -97,9 +99,12 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import sc.eidolon.nativeapp.AppContainer
 import sc.eidolon.nativeapp.core.Time
 import sc.eidolon.nativeapp.model.ChatLine
@@ -109,7 +114,9 @@ import sc.eidolon.nativeapp.model.EventKind
 import sc.eidolon.nativeapp.model.Failure
 import sc.eidolon.nativeapp.model.LastPreview
 import sc.eidolon.nativeapp.model.MessageLines
+import sc.eidolon.nativeapp.model.Photo
 import sc.eidolon.nativeapp.model.PhotoStatus
+import sc.eidolon.nativeapp.model.Segment
 import sc.eidolon.nativeapp.model.cueText
 import sc.eidolon.nativeapp.ui.components.CharacterAvatar
 import sc.eidolon.nativeapp.ui.components.LoadingState
@@ -123,6 +130,7 @@ import sc.eidolon.nativeapp.ui.theme.ProducerInkDark
 import sc.eidolon.nativeapp.ui.theme.ProducerInkText
 import sc.eidolon.nativeapp.ui.theme.ProducerInkTextDark
 import sc.eidolon.nativeapp.ui.theme.herColors
+import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -345,6 +353,7 @@ fun ChatScreen(
                         state = displayState,
                         her = her,
                         baseUrl = baseUrl,
+                        loadVoice = { cid, mid -> container.api.messageVoice(cid, mid) },
                         now = now,
                         zone = zone,
                         affinityOn = state.affinity != null,
@@ -555,6 +564,7 @@ private fun MessageList(
     state: ChatState,
     her: sc.eidolon.nativeapp.ui.theme.HerColors,
     baseUrl: String,
+    loadVoice: suspend (String, Int) -> ByteArray,
     now: Instant,
     zone: ZoneId,
     affinityOn: Boolean,
@@ -661,6 +671,7 @@ private fun MessageList(
                             last = line.last,
                             baseUrl = baseUrl,
                             conversationId = state.conversationId.orEmpty(),
+                            loadVoice = loadVoice,
                             zone = zone,
                             affinityOn = affinityOn,
                         )
@@ -746,11 +757,12 @@ private fun CharacterBubble(
     last: Boolean,
     baseUrl: String,
     conversationId: String,
+    loadVoice: suspend (String, Int) -> ByteArray,
     zone: ZoneId,
     affinityOn: Boolean,
 ) {
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val voice = entry.voice && entry.messageId != null && !entry.pending
+    val voice = entry.voice
     var showText by remember(entry.key) { mutableStateOf(false) }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         // 短回复按内容自适应；长回复最多占这一行的 82%，再受 520dp 限制。
@@ -779,81 +791,58 @@ private fun CharacterBubble(
                         modifier = Modifier.padding(bottom = 2.dp),
                     )
                 }
-                Box(
-                    modifier = Modifier
-                        .widthIn(max = bubbleMax)
-                        .clip(RoundedCornerShape(22.dp))
-                        .background(if (dark) HerBubbleDark else MaterialTheme.colorScheme.surface)
-                        .padding(12.dp),
-                ) {
+                if (voice) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (voice) {
-                            VoiceMessage(
-                                url = baseUrl.trimEnd('/') +
-                                    "/api/conversations/$conversationId/messages/${entry.messageId}/voice",
-                            )
-                        }
-                        if (!voice || showText) {
-                            if (entry.segments.isEmpty()) {
-                                Text(
-                                    text = "…",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        Box(
+                            modifier = Modifier
+                                .widthIn(max = 230.dp)
+                                .clip(RoundedCornerShape(22.dp))
+                                .background(if (dark) HerBubbleDark else MaterialTheme.colorScheme.surface)
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                        ) {
+                            if (entry.messageId != null) {
+                                VoiceMessage(
+                                    cacheKey = "$conversationId-${entry.messageId}",
+                                    loadAudio = { loadVoice(conversationId, entry.messageId) },
                                 )
                             } else {
-                                entry.segments.forEach { segment ->
-                                    if (segment.ja.isNotBlank()) {
-                                        Text(
-                                            text = segment.ja,
-                                            style = MaterialTheme.typography.bodyLarge.copy(
-                                                fontSize = 16.sp,
-                                                lineHeight = 24.sp,
-                                            ),
-                                        )
-                                    }
-                                    if (segment.zh.isNotBlank()) {
-                                        Text(
-                                            text = segment.zh,
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                fontSize = 12.sp,
-                                            ),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        if (voice) {
-                            TextButton(
-                                onClick = { showText = !showText },
-                                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
-                            ) {
                                 Text(
-                                    text = if (showText) "收起文字" else "转文字",
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                            }
-                        }
-                        entry.photo?.let { photo ->
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(120.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = when (photo.status) {
-                                        PhotoStatus.Pending -> "照片正在生成"
-                                        PhotoStatus.Failed -> "照片没发出来"
-                                        PhotoStatus.Ready -> "照片"
-                                    },
+                                    text = "语音消息…",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
+                        if (showText) {
+                            Box(
+                                modifier = Modifier
+                                    .widthIn(max = bubbleMax)
+                                    .clip(RoundedCornerShape(22.dp))
+                                    .background(if (dark) HerBubbleDark else MaterialTheme.colorScheme.surface)
+                                    .padding(12.dp),
+                            ) {
+                                CharacterMessageBody(entry.segments, entry.photo)
+                            }
+                        }
+                        TextButton(
+                            onClick = { showText = !showText },
+                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                        ) {
+                            Text(
+                                text = if (showText) "收起文字" else "转文字",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .widthIn(max = bubbleMax)
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(if (dark) HerBubbleDark else MaterialTheme.colorScheme.surface)
+                            .padding(12.dp),
+                    ) {
+                        CharacterMessageBody(entry.segments, entry.photo)
                     }
                 }
                 if (affinityOn) {
@@ -875,7 +864,64 @@ private fun CharacterBubble(
 }
 
 @Composable
-private fun VoiceMessage(url: String) {
+private fun CharacterMessageBody(
+    segments: List<Segment>,
+    photo: Photo?,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (segments.isEmpty()) {
+            Text(
+                text = "…",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            segments.forEach { segment ->
+                if (segment.ja.isNotBlank()) {
+                    Text(
+                        text = segment.ja,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 16.sp,
+                            lineHeight = 24.sp,
+                        ),
+                    )
+                }
+                if (segment.zh.isNotBlank()) {
+                    Text(
+                        text = segment.zh,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        photo?.let {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = when (it.status) {
+                        PhotoStatus.Pending -> "照片正在生成"
+                        PhotoStatus.Failed -> "照片没发出来"
+                        PhotoStatus.Ready -> "照片"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoiceMessage(cacheKey: String, loadAudio: suspend () -> ByteArray) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var player by remember { mutableStateOf<MediaPlayer?>(null) }
     var playing by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
@@ -899,46 +945,51 @@ private fun VoiceMessage(url: String) {
         }
         loading = true
         failed = false
-        val created = MediaPlayer()
-        created.setAudioAttributes(
-            AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_MEDIA)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .build(),
-        )
-        created.setDataSource(url)
-        created.setOnPreparedListener {
-            player = it
-            durationMs = it.duration
-            it.start()
-            playing = true
-            loading = false
-        }
-        created.setOnCompletionListener {
-            playing = false
-            it.seekTo(0)
-        }
-        created.setOnErrorListener { failedPlayer, _, _ ->
-            failedPlayer.release()
-            player = null
-            playing = false
-            loading = false
-            failed = true
-            true
-        }
-        try {
-            created.prepareAsync()
-        } catch (_: Exception) {
-            created.release()
-            loading = false
-            failed = true
+        scope.launch {
+            try {
+                val file = File(context.cacheDir, "voice-$cacheKey.mp3")
+                if (!file.exists() || file.length() == 0L) {
+                    val bytes = loadAudio()
+                    withContext(Dispatchers.IO) { file.writeBytes(bytes) }
+                }
+                val created = MediaPlayer()
+                created.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build(),
+                )
+                created.setDataSource(file.absolutePath)
+                created.setOnPreparedListener {
+                    player = it
+                    durationMs = it.duration
+                    it.start()
+                    playing = true
+                    loading = false
+                }
+                created.setOnCompletionListener {
+                    playing = false
+                    it.seekTo(0)
+                }
+                created.setOnErrorListener { failedPlayer, _, _ ->
+                    failedPlayer.release()
+                    player = null
+                    playing = false
+                    loading = false
+                    failed = true
+                    true
+                }
+                created.prepareAsync()
+            } catch (_: Exception) {
+                loading = false
+                failed = true
+            }
         }
     }
 
     Row(
         modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .widthIn(min = 140.dp, max = 220.dp)
             .clickable { play() }
             .padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,

@@ -46,7 +46,20 @@ data class ConversationLog(
         get() = entries.any { it is Entry.Event && it.kind == EventKind.Ended }
 
     fun reduce(action: LogAction): ConversationLog = when (action) {
-        is LogAction.Loaded -> ConversationLog(action.recorded.map(::toEntry), null)
+        is LogAction.Loaded -> {
+            var characters = 0
+            ConversationLog(
+                action.recorded.map { recorded ->
+                    if (recorded is Recorded.CharacterMessage) {
+                        characters += 1
+                        toEntry(recorded, voice = voiceOrdinal(characters))
+                    } else {
+                        toEntry(recorded)
+                    }
+                },
+                null,
+            )
+        }
         is LogAction.Submitted -> if (turn != null) this else opened(action.text, action.at, false)
         is LogAction.UserSaid -> when {
             turn == null -> opened(action.text, action.at, true)
@@ -74,7 +87,8 @@ data class ConversationLog(
         }
         is LogAction.Done -> {
             val turn = turn ?: return this
-            val recorded = toEntry(action.message)
+            val pending = entries.firstOrNull { it.key == turn.replyKey } as? Entry.Character
+            val recorded = toEntry(action.message, voice = pending?.voice ?: false)
             val entries = replace(turn.replyKey) { shown ->
                 if (recorded !is Entry.Character) recorded
                 else recorded.copy(
@@ -96,6 +110,7 @@ data class ConversationLog(
     private fun opened(text: String, at: Instant, confirmed: Boolean): ConversationLog {
         val position = entries.size
         val turn = Turn(confirmed, "new-$position", "new-${position + 1}")
+        val nextCharacter = entries.count { it is Entry.Character && !it.reachOut } + 1
         return ConversationLog(
             entries = entries + Entry.User(turn.userKey, text, at) +
                 Entry.Character(
@@ -103,6 +118,7 @@ data class ConversationLog(
                     segments = emptyList(),
                     pending = true,
                     at = at,
+                    voice = voiceOrdinal(nextCharacter),
                 ),
             turn = turn,
         )
@@ -164,7 +180,7 @@ private fun settledPhoto(shown: Entry, recorded: Entry.Character): Photo? {
     }
 }
 
-fun toEntry(recorded: Recorded): Entry = when (recorded) {
+fun toEntry(recorded: Recorded, voice: Boolean = false): Entry = when (recorded) {
     is Recorded.UserMessage -> Entry.User("m${recorded.id}", recorded.text, recorded.at)
     is Recorded.CharacterMessage -> Entry.Character(
         key = "m${recorded.id}",
@@ -174,7 +190,7 @@ fun toEntry(recorded: Recorded): Entry = when (recorded) {
         affinity = recorded.affinity,
         photo = recorded.photo,
         messageId = recorded.id,
-        voice = recorded.id > 0 && recorded.id % 5 == 0,
+        voice = voice,
     )
     is Recorded.ConversationEvent -> Entry.Event(
         key = "e${recorded.id}",
@@ -192,3 +208,7 @@ fun toEntry(recorded: Recorded): Entry = when (recorded) {
         reachOut = true,
     )
 }
+
+/** Every fifth reply is shown as a voice message; its ordinal among replies is stable
+ * across reloads, unlike a row id whose gaps depend on the user's messages. */
+internal fun voiceOrdinal(ordinal: Int): Boolean = ordinal > 0 && ordinal % 5 == 0

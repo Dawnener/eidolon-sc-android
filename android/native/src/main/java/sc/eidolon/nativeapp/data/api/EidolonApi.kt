@@ -292,8 +292,23 @@ class EidolonApi(
         deleteNoContent("/api/conversations/$conversationId")
     }
 
-    suspend fun messages(conversationId: String): List<Recorded> {
-        val raw = getRaw("/api/conversations/$conversationId/messages")
+    /** The message's voice, fetched with this client's cookies (MediaPlayer would not send them). */
+    suspend fun messageVoice(conversationId: String, messageId: Int): ByteArray =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url(url("/api/conversations/$conversationId/messages/$messageId/voice"))
+                .get()
+                .build()
+            execute(http.check, request).use { response ->
+                val body = response.body?.bytes() ?: ByteArray(0)
+                if (!response.isSuccessful) {
+                    throw ApiError.from(response.code, body.toString(Charsets.UTF_8))
+                }
+                body
+            }
+        }
+
+    suspend fun messages(conversationId: String): List<Recorded> {        val raw = getRaw("/api/conversations/$conversationId/messages")
         return json.parseToJsonElement(raw).jsonArray.mapNotNull { element ->
             runCatching {
                 val obj = element.jsonObject
