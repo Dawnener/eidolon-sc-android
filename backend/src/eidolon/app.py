@@ -90,6 +90,24 @@ PUSH_PING_SECONDS = 80.0
 idle phone is woken less, short enough to stay under the 100-second idle timeout of a
 proxy such as Cloudflare."""
 
+
+def newest_android_release() -> tuple[str, str] | None:
+    """The newest APK this deployment serves: its version and file name, parsed from
+    `Eidolon-SC-<major>.<minor>.<patch>-release.apk`; None when there is none yet."""
+    directory = Path(os.environ.get("EIDOLON_APK_DIR", "/apk/release"))
+    newest: tuple[tuple[int, int, int], str, str] | None = None
+    for path in directory.glob("Eidolon-SC-*-release.apk"):
+        middle = path.name.removeprefix("Eidolon-SC-").removesuffix("-release.apk")
+        parts = middle.split(".")
+        if len(parts) != 3 or not all(part.isdigit() for part in parts):
+            continue
+        version = (int(parts[0]), int(parts[1]), int(parts[2]))
+        if newest is None or version > newest[0]:
+            newest = (version, ".".join(parts), path.name)
+    if newest is None:
+        return None
+    return newest[1], newest[2]
+
 _PICTURE_CACHE = {"Cache-Control": "public, max-age=86400"}
 """Avatars and call backgrounds change only with a deploy (ADR-0003): browsers keep them a
 day, then revalidate by ETag, so lists showing every avatar don't download them each visit."""
@@ -408,21 +426,24 @@ def create_app(backend: Backend) -> FastAPI:
         """The newest release APK this deployment serves, whatever version the page was
         loaded at; the file itself stays at its versioned path, so the browser gets its
         proper name. No authentication: the download page is public."""
-        directory = Path(os.environ.get("EIDOLON_APK_DIR", "/apk/release"))
-        newest: tuple[tuple[int, int, int], str] | None = None
-        for path in directory.glob("Eidolon-SC-*-release.apk"):
-            middle = path.name.removeprefix("Eidolon-SC-").removesuffix("-release.apk")
-            parts = middle.split(".")
-            if len(parts) != 3 or not all(part.isdigit() for part in parts):
-                continue
-            version = (int(parts[0]), int(parts[1]), int(parts[2]))
-            if newest is None or version > newest[0]:
-                newest = (version, path.name)
+        newest = newest_android_release()
         if newest is None:
             raise HTTPException(404, "还没有可下载的安装包")
         return RedirectResponse(
             f"/apk/native/release/{newest[1]}",
             status_code=302,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get("/api/app/android")
+    def app_android() -> JSONResponse:
+        """The newest Android version, for the app to check for updates itself."""
+        newest = newest_android_release()
+        if newest is None:
+            raise HTTPException(404, "还没有可下载的安装包")
+        version, name = newest
+        return JSONResponse(
+            {"version": version, "url": f"/apk/native/release/{name}"},
             headers={"Cache-Control": "no-store"},
         )
 

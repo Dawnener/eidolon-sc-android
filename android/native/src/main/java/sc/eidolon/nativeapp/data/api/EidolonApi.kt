@@ -74,6 +74,8 @@ class EidolonApi(
 
     suspend fun health(): HealthDto = getJson("/api/health", client = http.probe)
 
+    suspend fun appUpdate(): AppUpdateDto = getJson("/api/app/android", client = http.probe)
+
     suspend fun devLogin(name: String) {
         postNoContent(
             "/api/auth/dev-login",

@@ -5,10 +5,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,7 +40,6 @@ import sc.eidolon.nativeapp.ui.auth.openOAuth
 import sc.eidolon.nativeapp.ui.navigation.MainScaffold
 import sc.eidolon.nativeapp.ui.onboarding.WelcomeScreen
 import sc.eidolon.nativeapp.ui.setup.ServerSetupScreen
-import androidx.compose.material3.Button
 
 @Composable
 fun EidolonApp(container: AppContainer) {
@@ -46,6 +50,15 @@ fun EidolonApp(container: AppContainer) {
     var authenticating by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    var updateChecked by remember { mutableStateOf(false) }
+    var foundUpdate by remember { mutableStateOf<sc.eidolon.nativeapp.model.AppUpdate?>(null) }
+
+    LaunchedEffect(state) {
+        if (!updateChecked && state is SessionState.SignedIn) {
+            updateChecked = true
+            foundUpdate = runCatching { container.updates.check() }.getOrNull()
+        }
+    }
 
     fun start() {
         if (welcomeDone || starting) return
@@ -145,6 +158,27 @@ fun EidolonApp(container: AppContainer) {
                 },
             )
         }
+    }
+
+    foundUpdate?.let { update ->
+        AlertDialog(
+            onDismissRequest = { foundUpdate = null },
+            title = { Text("发现新版本 ${update.version}") },
+            text = { Text("下载后覆盖安装即可，数据会保留。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        foundUpdate = null
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.url)))
+                        }
+                    },
+                ) { Text("下载更新") }
+            },
+            dismissButton = {
+                TextButton(onClick = { foundUpdate = null }) { Text("稍后") }
+            },
+        )
     }
 }
 

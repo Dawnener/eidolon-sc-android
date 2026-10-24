@@ -26,6 +26,23 @@ async def test_download_android_redirects_to_the_newest_release(
     assert res.headers["cache-control"] == "no-store"
 
 
+async def test_the_app_is_told_the_newest_version(
+    make_client: ClientFactory, tmp_path: Path, monkeypatch
+):
+    monkeypatch.setenv("EIDOLON_APK_DIR", str(tmp_path))
+    an_apk(tmp_path, "Eidolon-SC-0.1.9-release.apk")
+    an_apk(tmp_path, "Eidolon-SC-0.1.10-release.apk")
+
+    res = await make_client(FakeLLM(), user=None).get("/api/app/android")
+
+    assert res.status_code == 200
+    assert res.json() == {
+        "version": "0.1.10",
+        "url": "/apk/native/release/Eidolon-SC-0.1.10-release.apk",
+    }
+    assert res.headers["cache-control"] == "no-store"
+
+
 async def test_download_android_says_so_when_there_is_no_apk(
     make_client: ClientFactory, tmp_path: Path, monkeypatch
 ):

@@ -54,6 +54,9 @@ data class HealthDto(
 data class BirthdayDto(val month: Int, val day: Int)
 
 @Serializable
+data class AppUpdateDto(val version: String, val url: String)
+
+@Serializable
 data class ProfileDto(
     @SerialName("form_of_address") val formOfAddress: String? = null,
     val gender: String? = null,

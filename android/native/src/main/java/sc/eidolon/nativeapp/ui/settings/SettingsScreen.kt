@@ -60,6 +60,9 @@ fun SettingsScreen(
     var reachOuts by remember(account.reachOuts) { mutableStateOf(account.reachOuts) }
     var reachOutsSaving by remember { mutableStateOf(false) }
     var reachOutsError by remember { mutableStateOf<String?>(null) }
+    var checkingUpdate by remember { mutableStateOf(false) }
+    var foundUpdate by remember { mutableStateOf<sc.eidolon.nativeapp.model.AppUpdate?>(null) }
+    var updateMessage by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val pushEnabled by container.push.enabled.collectAsState()
     val notificationPermission = rememberLauncherForActivityResult(
@@ -152,6 +155,25 @@ fun SettingsScreen(
         )
         HorizontalDivider()
         SettingsRow(
+            title = "检查更新",
+            subtitle = if (checkingUpdate) "正在检查…" else "当前版本 ${BuildConfig.VERSION_NAME}",
+            onClick = {
+                if (checkingUpdate) return@SettingsRow
+                scope.launch {
+                    checkingUpdate = true
+                    updateMessage = null
+                    runCatching { container.updates.check() }
+                        .onSuccess { update ->
+                            foundUpdate = update
+                            if (update == null) updateMessage = "当前已是最新版本"
+                        }
+                        .onFailure { updateMessage = it.message ?: "检查更新失败，请稍后再试" }
+                    checkingUpdate = false
+                }
+            },
+        )
+        HorizontalDivider()
+        SettingsRow(
             title = "关于",
             subtitle = "Eidolon-SC ${BuildConfig.VERSION_NAME} · 非官方粉丝作品，角色由 AI 扮演",
             onClick = {
@@ -238,6 +260,38 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmDelete = false }) { Text("取消") }
+            },
+        )
+    }
+
+    foundUpdate?.let { update ->
+        AlertDialog(
+            onDismissRequest = { foundUpdate = null },
+            title = { Text("发现新版本 ${update.version}") },
+            text = { Text("当前版本 ${BuildConfig.VERSION_NAME}。下载后覆盖安装即可，数据会保留。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        foundUpdate = null
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.url)))
+                        }
+                    },
+                ) { Text("下载更新") }
+            },
+            dismissButton = {
+                TextButton(onClick = { foundUpdate = null }) { Text("稍后") }
+            },
+        )
+    }
+
+    updateMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = { updateMessage = null },
+            title = { Text("检查更新") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { updateMessage = null }) { Text("好") }
             },
         )
     }

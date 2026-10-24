@@ -22,6 +22,7 @@ import sc.eidolon.nativeapp.data.repo.ConversationRepository
 import sc.eidolon.nativeapp.data.repo.GiftsRepository
 import sc.eidolon.nativeapp.data.repo.MemoryRepository
 import sc.eidolon.nativeapp.data.repo.OutfitRepository
+import sc.eidolon.nativeapp.data.repo.UpdateChecker
 import sc.eidolon.nativeapp.push.PushController
 import sc.eidolon.nativeapp.push.PushNotifier
 import sc.eidolon.nativeapp.session.SessionController
@@ -55,6 +56,7 @@ class AppContainer(context: Context) {
     val conversations = ConversationRepository(api)
     val memories = MemoryRepository(api)
     val gifts = GiftsRepository(api)
+    val updates = UpdateChecker(api, serverState)
     val session = SessionController(api, serverStore, preferences, cookieStore, ownKeysStore, serverState)
 
     fun newCallController(): CallController = CallController(
