@@ -793,23 +793,37 @@ private fun CharacterBubble(
                 }
                 if (voice) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .widthIn(max = 230.dp)
-                                .clip(RoundedCornerShape(22.dp))
-                                .background(if (dark) HerBubbleDark else MaterialTheme.colorScheme.surface)
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            if (entry.messageId != null) {
-                                VoiceMessage(
-                                    cacheKey = "$conversationId-${entry.messageId}",
-                                    loadAudio = { loadVoice(conversationId, entry.messageId) },
-                                )
-                            } else {
+                            Box(
+                                modifier = Modifier
+                                    .widthIn(max = 200.dp)
+                                    .clip(RoundedCornerShape(22.dp))
+                                    .background(if (dark) HerBubbleDark else MaterialTheme.colorScheme.surface)
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                            ) {
+                                if (entry.messageId != null) {
+                                    VoiceMessage(
+                                        cacheKey = "$conversationId-${entry.messageId}",
+                                        loadAudio = { loadVoice(conversationId, entry.messageId) },
+                                    )
+                                } else {
+                                    Text(
+                                        text = "语音消息…",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                            TextButton(
+                                onClick = { showText = !showText },
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                            ) {
                                 Text(
-                                    text = "语音消息…",
+                                    text = if (showText) "收起文字" else "转文字",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
@@ -823,15 +837,6 @@ private fun CharacterBubble(
                             ) {
                                 CharacterMessageBody(entry.segments, entry.photo)
                             }
-                        }
-                        TextButton(
-                            onClick = { showText = !showText },
-                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
-                        ) {
-                            Text(
-                                text = if (showText) "收起文字" else "转文字",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
                         }
                     }
                 } else {
