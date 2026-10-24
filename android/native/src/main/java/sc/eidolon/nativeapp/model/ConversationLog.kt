@@ -22,6 +22,8 @@ sealed interface Entry {
         val photo: Photo? = null,
         val photosUsedUp: Instant? = null,
         val reachOut: Boolean = false,
+        val messageId: Int? = null,
+        val voice: Boolean = false,
     ) : Entry
 
     data class Event(
@@ -171,6 +173,8 @@ fun toEntry(recorded: Recorded): Entry = when (recorded) {
         at = recorded.at,
         affinity = recorded.affinity,
         photo = recorded.photo,
+        messageId = recorded.id,
+        voice = recorded.id > 0 && recorded.id % 5 == 0,
     )
     is Recorded.ConversationEvent -> Entry.Event(
         key = "e${recorded.id}",

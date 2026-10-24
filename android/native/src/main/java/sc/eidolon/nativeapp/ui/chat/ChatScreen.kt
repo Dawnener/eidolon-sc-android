@@ -1,5 +1,7 @@
 package sc.eidolon.nativeapp.ui.chat
 
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -36,6 +38,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.CardGiftcard
@@ -61,6 +65,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -655,6 +660,7 @@ private fun MessageList(
                             first = line.first,
                             last = line.last,
                             baseUrl = baseUrl,
+                            conversationId = state.conversationId.orEmpty(),
                             zone = zone,
                             affinityOn = affinityOn,
                         )
@@ -739,10 +745,13 @@ private fun CharacterBubble(
     first: Boolean,
     last: Boolean,
     baseUrl: String,
+    conversationId: String,
     zone: ZoneId,
     affinityOn: Boolean,
 ) {
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val voice = entry.voice && entry.messageId != null && !entry.pending
+    var showText by remember(entry.key) { mutableStateOf(false) }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         // 短回复按内容自适应；长回复最多占这一行的 82%，再受 520dp 限制。
         val bubbleMax = minOf(maxWidth * 0.82f, 520.dp)
@@ -778,32 +787,51 @@ private fun CharacterBubble(
                         .padding(12.dp),
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (entry.segments.isEmpty()) {
-                            Text(
-                                text = "…",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        if (voice) {
+                            VoiceMessage(
+                                url = baseUrl.trimEnd('/') +
+                                    "/api/conversations/$conversationId/messages/${entry.messageId}/voice",
                             )
-                        } else {
-                            entry.segments.forEach { segment ->
-                                if (segment.ja.isNotBlank()) {
-                                    Text(
-                                        text = segment.ja,
-                                        style = MaterialTheme.typography.bodyLarge.copy(
-                                            fontSize = 16.sp,
-                                            lineHeight = 24.sp,
-                                        ),
-                                    )
+                        }
+                        if (!voice || showText) {
+                            if (entry.segments.isEmpty()) {
+                                Text(
+                                    text = "…",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            } else {
+                                entry.segments.forEach { segment ->
+                                    if (segment.ja.isNotBlank()) {
+                                        Text(
+                                            text = segment.ja,
+                                            style = MaterialTheme.typography.bodyLarge.copy(
+                                                fontSize = 16.sp,
+                                                lineHeight = 24.sp,
+                                            ),
+                                        )
+                                    }
+                                    if (segment.zh.isNotBlank()) {
+                                        Text(
+                                            text = segment.zh,
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                fontSize = 12.sp,
+                                            ),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
-                                if (segment.zh.isNotBlank()) {
-                                    Text(
-                                        text = segment.zh,
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            fontSize = 12.sp,
-                                        ),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
+                            }
+                        }
+                        if (voice) {
+                            TextButton(
+                                onClick = { showText = !showText },
+                                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                            ) {
+                                Text(
+                                    text = if (showText) "收起文字" else "转文字",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
                             }
                         }
                         entry.photo?.let { photo ->
@@ -843,6 +871,113 @@ private fun CharacterBubble(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun VoiceMessage(url: String) {
+    var player by remember { mutableStateOf<MediaPlayer?>(null) }
+    var playing by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+    var durationMs by remember { mutableStateOf(0) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            player?.release()
+            player = null
+        }
+    }
+
+    fun play() {
+        if (loading) return
+        val current = player
+        if (current != null) {
+            if (playing) current.pause() else current.start()
+            playing = !playing
+            return
+        }
+        loading = true
+        failed = false
+        val created = MediaPlayer()
+        created.setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build(),
+        )
+        created.setDataSource(url)
+        created.setOnPreparedListener {
+            player = it
+            durationMs = it.duration
+            it.start()
+            playing = true
+            loading = false
+        }
+        created.setOnCompletionListener {
+            playing = false
+            it.seekTo(0)
+        }
+        created.setOnErrorListener { failedPlayer, _, _ ->
+            failedPlayer.release()
+            player = null
+            playing = false
+            loading = false
+            failed = true
+            true
+        }
+        try {
+            created.prepareAsync()
+        } catch (_: Exception) {
+            created.release()
+            loading = false
+            failed = true
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { play() }
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            imageVector = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+            contentDescription = if (playing) "暂停语音" else "播放语音",
+            modifier = Modifier.size(26.dp),
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            val bars = listOf(10, 18, 26, 16, 22, 12, 20, 28, 18, 14, 24, 10)
+            bars.forEach { height ->
+                Box(
+                    Modifier
+                        .width(3.dp)
+                        .height(height.dp)
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                            RoundedCornerShape(2.dp),
+                        ),
+                )
+            }
+        }
+        Text(
+            text = when {
+                loading -> "加载中…"
+                failed -> "重试"
+                durationMs > 0 -> "${(durationMs / 1000).coerceAtLeast(1)}\""
+                else -> "语音"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

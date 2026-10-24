@@ -4,10 +4,10 @@
 # 已安装的用户无法覆盖升级。这里直接下载线上那份 APK，保证字节和签名一致。
 #
 # 用法：先确认
-# https://eidolon.shiny-colors-ai.xyz/apk/native/release/Eidolon-SC-0.1.10-release.apk
-# 是这次要发布的包（版本号换成标签里的），再推送标签 `app-v0.1.10`。
+# https://eidolon.shiny-colors-ai.xyz/apk/native/release/Eidolon-SC-0.1.11-release.apk
+# 是这次要发布的包（版本号换成标签里的），再推送标签 `app-v0.1.11`。
 # 下载地址形如：
-# https://github.com/MikiHoshiiP/eidolon-sc-android/releases/download/app-v0.1.10/Eidolon-SC-0.1.10-release.apk
+# https://github.com/MikiHoshiiP/eidolon-sc-android/releases/download/app-v0.1.11/Eidolon-SC-0.1.11-release.apk
 name: Android Release
 
 on:

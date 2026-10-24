@@ -90,6 +90,10 @@ PUSH_PING_SECONDS = 80.0
 idle phone is woken less, short enough to stay under the 100-second idle timeout of a
 proxy such as Cloudflare."""
 
+_VOICE_CACHE_SIZE = 128
+"""How many voiced chat messages are kept in memory, at most, before the oldest goes."""
+_VOICE_HEADERS = {"Cache-Control": "private, max-age=86400"}
+
 
 def newest_android_release() -> tuple[str, str] | None:
     """The newest APK this deployment serves: its version and file name, parsed from
@@ -280,6 +284,9 @@ def create_app(backend: Backend) -> FastAPI:
     store, characters, engine = backend.store, backend.characters, backend.engine
     memory, calls, admissions = backend.memories, backend.calls, backend.admissions
     gift_catalog, titles = backend.gift_catalog, backend.titles
+    voice_cache: dict[int, bytes] = {}
+    """Chat messages already voiced, by message id; small and per process, as a message
+    never changes once recorded."""
 
     def gift_of(event: ConversationEvent) -> dict:
         """For a gift record, which gift and its name, to show it by."""
@@ -706,6 +713,44 @@ def create_app(backend: Backend) -> FastAPI:
         order. The user reads it: its reach-outs are seen from now on."""
         conversation = await conversation_or_404(conversation_id, user_id)
         return [recorded(entry) for entry in await store.read_by_user(conversation.id)]
+
+    @app.get("/api/conversations/{conversation_id}/messages/{message_id}/voice")
+    async def message_voice(
+        conversation_id: str, message_id: int, user_id: UserId
+    ) -> Response:
+        """Her reply as an mp3, on the deployer's Fish Audio key. The app shows some
+        replies as voice messages and asks for the audio when one is played; the text is
+        the message's own, never transcribed back. Kept in memory per message."""
+        conversation = await conversation_or_404(conversation_id, user_id)
+        message = next(
+            (
+                entry
+                for entry in await store.list_messages(conversation.id)
+                if entry.id == message_id and entry.role == "character" and entry.ja
+            ),
+            None,
+        )
+        if message is None or message.ja is None:
+            raise HTTPException(404, "没有这条语音消息")
+        if (cached := voice_cache.get(message.id)) is not None:
+            return Response(cached, media_type="audio/mpeg", headers=_VOICE_HEADERS)
+        character = characters.get(conversation.character_id)
+        key = backend.settings.fish_audio_api_key
+        if character is None or not character.voice_id:
+            raise HTTPException(503, "这位角色没有配置音色")
+        if key is None:
+            raise HTTPException(503, "服务器没有配置语音合成 key")
+        try:
+            audio = await backend.speech.voice_message(
+                key, backend.settings.fish_audio_model, character.voice_id, message.ja
+            )
+        except Exception:
+            log.exception("voicing message %s failed", message.id)
+            raise HTTPException(502, "语音生成失败，请稍后再试") from None
+        if len(voice_cache) >= _VOICE_CACHE_SIZE:
+            voice_cache.pop(next(iter(voice_cache)))
+        voice_cache[message.id] = audio
+        return Response(audio, media_type="audio/mpeg", headers=_VOICE_HEADERS)
 
     @app.post("/api/conversations/{conversation_id}/turns")
     async def text_turn(

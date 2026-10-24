@@ -121,7 +121,7 @@ from eidolon.config import (
     SttProvider,
     UsageLimits,
 )
-from eidolon.delivery_cues import spoken_by
+from eidolon.delivery_cues import spoken_by, voiced
 from eidolon.emotion import EmotionJudging, SaidSegment, SegmentToJudge
 from eidolon.engine import (
     CallTurnRecorded,
@@ -294,6 +294,12 @@ class Speech(Protocol):
         self, api_key: str, model: FishAudioModel, voice_id: str, sample_rate: int, *, own: bool
     ) -> TTSService:
         """Speech synthesis for one call, with `model`, in the character's voice."""
+        ...
+
+    async def voice_message(
+        self, api_key: str, model: FishAudioModel, voice_id: str, text: str
+    ) -> bytes:
+        """A chat message voiced over the deployer's Fish Audio key, in mp3."""
         ...
 
     async def check_stt(self, provider: SttProvider, api_key: str, *, own: bool) -> SttKey:
@@ -790,6 +796,29 @@ class SpeechServices:
         res.raise_for_status()
         if not res.content:
             raise RuntimeError("Fish Audio 没有返回音频")
+
+    async def voice_message(
+        self, api_key: str, model: FishAudioModel, voice_id: str, text: str
+    ) -> bytes:
+        """A chat message voiced over Fish Audio's HTTP API, in mp3, with the readings as
+        the pronunciation dictionary; raises httpx.HTTPError saying why not."""
+        body: dict[str, object] = {
+            "text": spoken_by(voiced(text), model),
+            "reference_id": voice_id,
+            "format": "mp3",
+        }
+        if dictionary := pronunciation_dictionary(self.readings):
+            body["pronunciation_dictionary"] = dictionary
+        async with open_client(self._proxy("tts", False)(), httpx.Timeout(60, connect=10)) as client:
+            res = await client.post(
+                FISH_TTS_HTTP_URL,
+                headers={"Authorization": f"Bearer {api_key}", "model": model},
+                json=body,
+            )
+        res.raise_for_status()
+        if not res.content:
+            raise RuntimeError("Fish Audio 没有返回音频")
+        return res.content
 
     def _proxy(self, service: Literal["tts", "stt"], own: bool) -> Callable[[], str | None]:
         """Where a connection of `service` on a user's `own` key or the deployer's goes

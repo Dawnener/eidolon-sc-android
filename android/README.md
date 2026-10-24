@@ -10,10 +10,10 @@
 source ~/.config/eidolon-android/env.sh
 cd android
 ./gradlew :native:assembleDebug
-# 产物：android/native/build/outputs/apk/debug/Eidolon-SC-0.1.10-debug.apk
+# 产物：android/native/build/outputs/apk/debug/Eidolon-SC-0.1.11-debug.apk
 
 ./gradlew :native:assembleRelease
-# 产物：android/native/build/outputs/apk/release/Eidolon-SC-0.1.10-release.apk
+# 产物：android/native/build/outputs/apk/release/Eidolon-SC-0.1.11-release.apk
 ```
 
 Release 目前用自动生成的 debug keystore 签名，方便侧载和覆盖安装；它不是正式发布签名。
@@ -23,6 +23,7 @@ Release 目前用自动生成的 debug keystore 签名，方便侧载和覆盖�
 - 首次安装会看到深色欢迎页，点「使用 GitHub 登录」直接打开 GitHub 授权；服务器地址默认是内置的公开部署，不需要填写；同意条款后进入主界面；
 - GitHub 登录、同意条款；其他使用开发登录的服务器仍可在登录页使用开发用户名；
 - 对话列表（按角色搜索）、流式日语回复 + 中文字幕、开新对话；
+- 随机语音消息：部分回复以语音气泡显示，点击播放；「转文字」展开原文字幕，不做语音识别；
 - 设置：制作人档案（称呼/性别/时区/生日）、自带密钥（LLM / 后台 LLM / TTS / STT）、搭话开关、记忆、统计、退出登录、删除账号；
 - 历史对话：聊天页右上角菜单列出这位角色的所有对话，可只读查看过去那段、删除当前那段以外的旧对话；
 - 搭话：显示角色主动发来的消息、未读圆点；搭话模型由服务器统一配置，App 里不再填写；
@@ -143,13 +144,13 @@ EIDOLON_LAN_IP=<你的局域网 IP> bash scripts/dev-local.sh start
 
 1. 手机浏览器打开 `http://<局域网 IP>:8080/`，确认页面能显示。打不开先看下面的防火墙。
 2. 打开 `http://<局域网 IP>:8080/apk/`，选择要装的包：
-   - 原生 App Release：`/apk/native/release/Eidolon-SC-0.1.10-release.apk`（推荐）
-   - 原生 App Debug：`/apk/native/debug/Eidolon-SC-0.1.10-debug.apk`
+   - 原生 App Release：`/apk/native/release/Eidolon-SC-0.1.11-release.apk`（推荐）
+   - 原生 App Debug：`/apk/native/debug/Eidolon-SC-0.1.11-debug.apk`
 3. 按提示允许浏览器「安装未知应用」。
 
 公网下载也放在 GitHub Releases，地址形如
-`https://github.com/MikiHoshiiP/eidolon-sc-android/releases/download/app-v0.1.10/Eidolon-SC-0.1.10-release.apk`。
-推送 `app-v0.1.10` 这样的标签时，`.github/workflows/android-release.yml` 会把部署站点上同一份已签名 APK 同步到 Release，不重新构建。
+`https://github.com/MikiHoshiiP/eidolon-sc-android/releases/download/app-v0.1.11/Eidolon-SC-0.1.11-release.apk`。
+推送 `app-v0.1.11` 这样的标签时，`.github/workflows/android-release.yml` 会把部署站点上同一份已签名 APK 同步到 Release，不重新构建。
 
 原生 App 首次启动会连内置的公开部署地址；登录、同意条款后进入对话列表。设置里不再提供更换服务器；首次启动连不上时仍会进入服务器设置页。
 

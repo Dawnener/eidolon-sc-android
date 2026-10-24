@@ -793,6 +793,14 @@ class FakeSpeech:
         if api_key in self.rejects:
             raise RuntimeError(self.rejects[api_key])
 
+    async def voice_message(
+        self, api_key: str, model: str, voice_id: str, text: str
+    ) -> bytes:
+        self.voiced.append((api_key, model, voice_id))
+        if api_key in self.rejects:
+            raise RuntimeError(self.rejects[api_key])
+        return f"mp3: {text} ({voice_id})".encode()
+
     def _try(self, service: str, api_key: str) -> None:
         self.checked.append((service, api_key))
         if api_key in self.rejects:
